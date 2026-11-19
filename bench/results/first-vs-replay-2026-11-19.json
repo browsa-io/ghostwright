@@ -1,0 +1,973 @@
+{
+  "date": "2026-11-19",
+  "ghostwright": "0.1.0",
+  "model": "openrouter/google/gemini-3.1-flash-lite",
+  "trials": 3,
+  "replayInputs": "same",
+  "machine": {
+    "cpu": "Apple M2",
+    "os": "darwin 24.6.0",
+    "node": "v26.0.0",
+    "browser": "local Chrome, headless"
+  },
+  "flows": [
+    {
+      "id": "books-category",
+      "site": "books.toscrape.com",
+      "what": "open a category, read every book with its price"
+    },
+    {
+      "id": "books-detail",
+      "site": "books.toscrape.com",
+      "what": "open a book from the front page, read its price and whether it is in stock"
+    },
+    {
+      "id": "quotes-tag",
+      "site": "quotes.toscrape.com",
+      "what": "open a tag, read every quote with its author"
+    },
+    {
+      "id": "login",
+      "site": "the-internet.herokuapp.com",
+      "what": "sign in with the site's public demo account, read the message"
+    }
+  ],
+  "totals": {
+    "runs": 60,
+    "ok": 60,
+    "usd": 0.02187499999999999,
+    "modelCalls": 54
+  },
+  "runs": [
+    {
+      "flow": "books-category",
+      "trial": 1,
+      "run": 1,
+      "kind": "record",
+      "params": {
+        "category": "Travel"
+      },
+      "ok": true,
+      "ms": 11417,
+      "repaired": [],
+      "modelCalls": 2,
+      "inputTokens": 4646,
+      "outputTokens": 270,
+      "usd": 0.0015665
+    },
+    {
+      "flow": "books-category",
+      "trial": 1,
+      "run": 2,
+      "kind": "replay",
+      "params": {
+        "category": "Travel"
+      },
+      "ok": true,
+      "ms": 550,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "books-category",
+      "trial": 1,
+      "run": 3,
+      "kind": "replay",
+      "params": {
+        "category": "Travel"
+      },
+      "ok": true,
+      "ms": 549,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "books-category",
+      "trial": 1,
+      "run": 4,
+      "kind": "replay",
+      "params": {
+        "category": "Travel"
+      },
+      "ok": true,
+      "ms": 544,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "books-category",
+      "trial": 1,
+      "run": 5,
+      "kind": "replay",
+      "params": {
+        "category": "Travel"
+      },
+      "ok": true,
+      "ms": 594,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "books-detail",
+      "trial": 1,
+      "run": 1,
+      "kind": "record",
+      "params": {
+        "title": "Tipping the Velvet"
+      },
+      "ok": true,
+      "ms": 3362,
+      "repaired": [],
+      "modelCalls": 2,
+      "inputTokens": 2844,
+      "outputTokens": 54,
+      "usd": 0.000792
+    },
+    {
+      "flow": "books-detail",
+      "trial": 1,
+      "run": 2,
+      "kind": "replay",
+      "params": {
+        "title": "Tipping the Velvet"
+      },
+      "ok": true,
+      "ms": 1650,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 1076,
+      "outputTokens": 14,
+      "usd": 0.0002899999999999999
+    },
+    {
+      "flow": "books-detail",
+      "trial": 1,
+      "run": 3,
+      "kind": "replay",
+      "params": {
+        "title": "Tipping the Velvet"
+      },
+      "ok": true,
+      "ms": 1565,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 1076,
+      "outputTokens": 14,
+      "usd": 0.0002899999999999999
+    },
+    {
+      "flow": "books-detail",
+      "trial": 1,
+      "run": 4,
+      "kind": "replay",
+      "params": {
+        "title": "Tipping the Velvet"
+      },
+      "ok": true,
+      "ms": 1751,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 1076,
+      "outputTokens": 14,
+      "usd": 0.0002899999999999999
+    },
+    {
+      "flow": "books-detail",
+      "trial": 1,
+      "run": 5,
+      "kind": "replay",
+      "params": {
+        "title": "Tipping the Velvet"
+      },
+      "ok": true,
+      "ms": 1852,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 1076,
+      "outputTokens": 14,
+      "usd": 0.0002899999999999999
+    },
+    {
+      "flow": "quotes-tag",
+      "trial": 1,
+      "run": 1,
+      "kind": "record",
+      "params": {
+        "tag": "love"
+      },
+      "ok": true,
+      "ms": 8301,
+      "repaired": [],
+      "modelCalls": 2,
+      "inputTokens": 3838,
+      "outputTokens": 1005,
+      "usd": 0.002467
+    },
+    {
+      "flow": "quotes-tag",
+      "trial": 1,
+      "run": 2,
+      "kind": "replay",
+      "params": {
+        "tag": "love"
+      },
+      "ok": true,
+      "ms": 1892,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "quotes-tag",
+      "trial": 1,
+      "run": 3,
+      "kind": "replay",
+      "params": {
+        "tag": "love"
+      },
+      "ok": true,
+      "ms": 1873,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "quotes-tag",
+      "trial": 1,
+      "run": 4,
+      "kind": "replay",
+      "params": {
+        "tag": "love"
+      },
+      "ok": true,
+      "ms": 1931,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "quotes-tag",
+      "trial": 1,
+      "run": 5,
+      "kind": "replay",
+      "params": {
+        "tag": "love"
+      },
+      "ok": true,
+      "ms": 1908,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "login",
+      "trial": 1,
+      "run": 1,
+      "kind": "record",
+      "params": {},
+      "ok": true,
+      "ms": 12826,
+      "repaired": [],
+      "modelCalls": 4,
+      "inputTokens": 2678,
+      "outputTokens": 109,
+      "usd": 0.0008330000000000004
+    },
+    {
+      "flow": "login",
+      "trial": 1,
+      "run": 2,
+      "kind": "replay",
+      "params": {},
+      "ok": true,
+      "ms": 6952,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 483,
+      "outputTokens": 11,
+      "usd": 0.00013725000000000022
+    },
+    {
+      "flow": "login",
+      "trial": 1,
+      "run": 3,
+      "kind": "replay",
+      "params": {},
+      "ok": true,
+      "ms": 7444,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 483,
+      "outputTokens": 11,
+      "usd": 0.00013725000000000022
+    },
+    {
+      "flow": "login",
+      "trial": 1,
+      "run": 4,
+      "kind": "replay",
+      "params": {},
+      "ok": true,
+      "ms": 6785,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 483,
+      "outputTokens": 11,
+      "usd": 0.00013725000000000022
+    },
+    {
+      "flow": "login",
+      "trial": 1,
+      "run": 5,
+      "kind": "replay",
+      "params": {},
+      "ok": true,
+      "ms": 6048,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 483,
+      "outputTokens": 11,
+      "usd": 0.00013725000000000022
+    },
+    {
+      "flow": "books-category",
+      "trial": 2,
+      "run": 1,
+      "kind": "record",
+      "params": {
+        "category": "Travel"
+      },
+      "ok": true,
+      "ms": 11809,
+      "repaired": [],
+      "modelCalls": 2,
+      "inputTokens": 4646,
+      "outputTokens": 421,
+      "usd": 0.0017930000000000012
+    },
+    {
+      "flow": "books-category",
+      "trial": 2,
+      "run": 2,
+      "kind": "replay",
+      "params": {
+        "category": "Travel"
+      },
+      "ok": true,
+      "ms": 14287,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "books-category",
+      "trial": 2,
+      "run": 3,
+      "kind": "replay",
+      "params": {
+        "category": "Travel"
+      },
+      "ok": true,
+      "ms": 8191,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "books-category",
+      "trial": 2,
+      "run": 4,
+      "kind": "replay",
+      "params": {
+        "category": "Travel"
+      },
+      "ok": true,
+      "ms": 5801,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "books-category",
+      "trial": 2,
+      "run": 5,
+      "kind": "replay",
+      "params": {
+        "category": "Travel"
+      },
+      "ok": true,
+      "ms": 7045,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "books-detail",
+      "trial": 2,
+      "run": 1,
+      "kind": "record",
+      "params": {
+        "title": "Tipping the Velvet"
+      },
+      "ok": true,
+      "ms": 7616,
+      "repaired": [],
+      "modelCalls": 2,
+      "inputTokens": 2857,
+      "outputTokens": 54,
+      "usd": 0.0007952500000000008
+    },
+    {
+      "flow": "books-detail",
+      "trial": 2,
+      "run": 2,
+      "kind": "replay",
+      "params": {
+        "title": "Tipping the Velvet"
+      },
+      "ok": true,
+      "ms": 5171,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 1076,
+      "outputTokens": 14,
+      "usd": 0.0002900000000000003
+    },
+    {
+      "flow": "books-detail",
+      "trial": 2,
+      "run": 3,
+      "kind": "replay",
+      "params": {
+        "title": "Tipping the Velvet"
+      },
+      "ok": true,
+      "ms": 5671,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 1076,
+      "outputTokens": 14,
+      "usd": 0.0002900000000000003
+    },
+    {
+      "flow": "books-detail",
+      "trial": 2,
+      "run": 4,
+      "kind": "replay",
+      "params": {
+        "title": "Tipping the Velvet"
+      },
+      "ok": true,
+      "ms": 5586,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 1076,
+      "outputTokens": 14,
+      "usd": 0.0002900000000000003
+    },
+    {
+      "flow": "books-detail",
+      "trial": 2,
+      "run": 5,
+      "kind": "replay",
+      "params": {
+        "title": "Tipping the Velvet"
+      },
+      "ok": true,
+      "ms": 5062,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 1076,
+      "outputTokens": 14,
+      "usd": 0.0002900000000000003
+    },
+    {
+      "flow": "quotes-tag",
+      "trial": 2,
+      "run": 1,
+      "kind": "record",
+      "params": {
+        "tag": "love"
+      },
+      "ok": true,
+      "ms": 11314,
+      "repaired": [],
+      "modelCalls": 2,
+      "inputTokens": 3838,
+      "outputTokens": 857,
+      "usd": 0.0022450000000000005
+    },
+    {
+      "flow": "quotes-tag",
+      "trial": 2,
+      "run": 2,
+      "kind": "replay",
+      "params": {
+        "tag": "love"
+      },
+      "ok": true,
+      "ms": 2313,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "quotes-tag",
+      "trial": 2,
+      "run": 3,
+      "kind": "replay",
+      "params": {
+        "tag": "love"
+      },
+      "ok": true,
+      "ms": 2317,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "quotes-tag",
+      "trial": 2,
+      "run": 4,
+      "kind": "replay",
+      "params": {
+        "tag": "love"
+      },
+      "ok": true,
+      "ms": 2272,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "quotes-tag",
+      "trial": 2,
+      "run": 5,
+      "kind": "replay",
+      "params": {
+        "tag": "love"
+      },
+      "ok": true,
+      "ms": 2263,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "login",
+      "trial": 2,
+      "run": 1,
+      "kind": "record",
+      "params": {},
+      "ok": true,
+      "ms": 11457,
+      "repaired": [],
+      "modelCalls": 4,
+      "inputTokens": 2678,
+      "outputTokens": 109,
+      "usd": 0.0008330000000000004
+    },
+    {
+      "flow": "login",
+      "trial": 2,
+      "run": 2,
+      "kind": "replay",
+      "params": {},
+      "ok": true,
+      "ms": 7074,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 483,
+      "outputTokens": 11,
+      "usd": 0.00013725000000000022
+    },
+    {
+      "flow": "login",
+      "trial": 2,
+      "run": 3,
+      "kind": "replay",
+      "params": {},
+      "ok": true,
+      "ms": 7210,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 483,
+      "outputTokens": 11,
+      "usd": 0.00013725000000000022
+    },
+    {
+      "flow": "login",
+      "trial": 2,
+      "run": 4,
+      "kind": "replay",
+      "params": {},
+      "ok": true,
+      "ms": 6764,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 483,
+      "outputTokens": 11,
+      "usd": 0.00013725000000000022
+    },
+    {
+      "flow": "login",
+      "trial": 2,
+      "run": 5,
+      "kind": "replay",
+      "params": {},
+      "ok": true,
+      "ms": 7176,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 483,
+      "outputTokens": 11,
+      "usd": 0.00013725000000000022
+    },
+    {
+      "flow": "books-category",
+      "trial": 3,
+      "run": 1,
+      "kind": "record",
+      "params": {
+        "category": "Travel"
+      },
+      "ok": true,
+      "ms": 6102,
+      "repaired": [],
+      "modelCalls": 2,
+      "inputTokens": 4646,
+      "outputTokens": 270,
+      "usd": 0.001566500000000002
+    },
+    {
+      "flow": "books-category",
+      "trial": 3,
+      "run": 2,
+      "kind": "replay",
+      "params": {
+        "category": "Travel"
+      },
+      "ok": true,
+      "ms": 3004,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "books-category",
+      "trial": 3,
+      "run": 3,
+      "kind": "replay",
+      "params": {
+        "category": "Travel"
+      },
+      "ok": true,
+      "ms": 2676,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "books-category",
+      "trial": 3,
+      "run": 4,
+      "kind": "replay",
+      "params": {
+        "category": "Travel"
+      },
+      "ok": true,
+      "ms": 2387,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "books-category",
+      "trial": 3,
+      "run": 5,
+      "kind": "replay",
+      "params": {
+        "category": "Travel"
+      },
+      "ok": true,
+      "ms": 2166,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "books-detail",
+      "trial": 3,
+      "run": 1,
+      "kind": "record",
+      "params": {
+        "title": "Tipping the Velvet"
+      },
+      "ok": true,
+      "ms": 4362,
+      "repaired": [],
+      "modelCalls": 2,
+      "inputTokens": 2857,
+      "outputTokens": 47,
+      "usd": 0.0007847499999999973
+    },
+    {
+      "flow": "books-detail",
+      "trial": 3,
+      "run": 2,
+      "kind": "replay",
+      "params": {
+        "title": "Tipping the Velvet"
+      },
+      "ok": true,
+      "ms": 3475,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 1076,
+      "outputTokens": 14,
+      "usd": 0.0002899999999999986
+    },
+    {
+      "flow": "books-detail",
+      "trial": 3,
+      "run": 3,
+      "kind": "replay",
+      "params": {
+        "title": "Tipping the Velvet"
+      },
+      "ok": true,
+      "ms": 3469,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 1076,
+      "outputTokens": 14,
+      "usd": 0.0002899999999999986
+    },
+    {
+      "flow": "books-detail",
+      "trial": 3,
+      "run": 4,
+      "kind": "replay",
+      "params": {
+        "title": "Tipping the Velvet"
+      },
+      "ok": true,
+      "ms": 3540,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 1076,
+      "outputTokens": 14,
+      "usd": 0.0002899999999999986
+    },
+    {
+      "flow": "books-detail",
+      "trial": 3,
+      "run": 5,
+      "kind": "replay",
+      "params": {
+        "title": "Tipping the Velvet"
+      },
+      "ok": true,
+      "ms": 3572,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 1076,
+      "outputTokens": 14,
+      "usd": 0.0002899999999999986
+    },
+    {
+      "flow": "quotes-tag",
+      "trial": 3,
+      "run": 1,
+      "kind": "record",
+      "params": {
+        "tag": "love"
+      },
+      "ok": true,
+      "ms": 6148,
+      "repaired": [],
+      "modelCalls": 2,
+      "inputTokens": 3838,
+      "outputTokens": 857,
+      "usd": 0.0022450000000000005
+    },
+    {
+      "flow": "quotes-tag",
+      "trial": 3,
+      "run": 2,
+      "kind": "replay",
+      "params": {
+        "tag": "love"
+      },
+      "ok": true,
+      "ms": 2268,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "quotes-tag",
+      "trial": 3,
+      "run": 3,
+      "kind": "replay",
+      "params": {
+        "tag": "love"
+      },
+      "ok": true,
+      "ms": 2316,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "quotes-tag",
+      "trial": 3,
+      "run": 4,
+      "kind": "replay",
+      "params": {
+        "tag": "love"
+      },
+      "ok": true,
+      "ms": 2283,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "quotes-tag",
+      "trial": 3,
+      "run": 5,
+      "kind": "replay",
+      "params": {
+        "tag": "love"
+      },
+      "ok": true,
+      "ms": 2293,
+      "repaired": [],
+      "modelCalls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "usd": 0
+    },
+    {
+      "flow": "login",
+      "trial": 3,
+      "run": 1,
+      "kind": "record",
+      "params": {},
+      "ok": true,
+      "ms": 10610,
+      "repaired": [],
+      "modelCalls": 4,
+      "inputTokens": 2678,
+      "outputTokens": 105,
+      "usd": 0.0008269999999999979
+    },
+    {
+      "flow": "login",
+      "trial": 3,
+      "run": 2,
+      "kind": "replay",
+      "params": {},
+      "ok": true,
+      "ms": 6455,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 483,
+      "outputTokens": 11,
+      "usd": 0.00013724999999999848
+    },
+    {
+      "flow": "login",
+      "trial": 3,
+      "run": 3,
+      "kind": "replay",
+      "params": {},
+      "ok": true,
+      "ms": 6981,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 483,
+      "outputTokens": 11,
+      "usd": 0.00013724999999999848
+    },
+    {
+      "flow": "login",
+      "trial": 3,
+      "run": 4,
+      "kind": "replay",
+      "params": {},
+      "ok": true,
+      "ms": 6623,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 483,
+      "outputTokens": 11,
+      "usd": 0.00013724999999999848
+    },
+    {
+      "flow": "login",
+      "trial": 3,
+      "run": 5,
+      "kind": "replay",
+      "params": {},
+      "ok": true,
+      "ms": 7580,
+      "repaired": [],
+      "modelCalls": 1,
+      "inputTokens": 483,
+      "outputTokens": 11,
+      "usd": 0.00013724999999999848
+    }
+  ]
+}

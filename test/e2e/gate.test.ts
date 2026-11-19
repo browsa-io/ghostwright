@@ -391,6 +391,30 @@ describe("B2 a replay that did something else", () => {
     } finally { await gw.close(); }
   });
 
+  it("a param name the page lists twice is told apart by its heading, with no model", async () => {
+    const store = tempStore();
+    const rec = await open({ model: mockModel(), store });
+    try {
+      const flow = await rec.flow("gate-tag", { params: { tag: "Travel" } });
+      await flow.goto(`${fx.url}/gate-tags.html`);
+      expect((await flow.act("open the %tag% tag")).ok).toBe(true);
+      const saved = await flow.save();
+      expect(saved.steps[1].target?.name).toBe("{{tag}}");
+      expect(saved.steps[1].target?.near).toBeTruthy();
+    } finally { await rec.close(); }
+    const gw = await open({ store });   // no model: a repair would throw
+    try {
+      const same = await gw.run("gate-tag", { tag: "Travel" });
+      expect(same.meta.modelCalls).toBe(0);
+      expect(same.repaired).toEqual([]);
+      expect(gw.page.url()).toBe(`${fx.url}/gate-cat-travel.html`);
+      const other = await gw.run("gate-tag", { tag: "Mystery" });
+      expect(other.repaired).toEqual([]);
+      expect(gw.page.url()).toBe(`${fx.url}/gate-cat-mystery.html`);
+      await expect(gw.run("gate-tag", { tag: "Nonexistent" })).rejects.toThrow(/no element matches name "Nonexistent"/);
+    } finally { await gw.close(); }
+  });
+
   it("a step that goes somewhere else than when recorded fails", async () => {
     const store = tempStore();
     const rec = await open({ model: mockModel(), store });

@@ -225,7 +225,7 @@
       }
       if (tg.near) {
         const want = norm(tg.near).toLowerCase();
-        const ids = [...out.css, ...out.text, ...out.xpath];
+        const ids = [...out.css, ...out.text, ...out.xpath, ...(tg.among || [])];
         out.near = [...new Set(ids)].filter(id => { const e = pv.el(id); return e && nearText(e).toLowerCase() === want; });
       }
       return JSON.stringify(out);

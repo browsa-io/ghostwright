@@ -1,6 +1,87 @@
-# Ghostwright
+<p align="center">
+  <a href="https://browsa.io/ghostwright">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/browsa-io/ghostwright/main/assets/logo-dark.svg">
+      <img alt="Ghostwright" src="https://raw.githubusercontent.com/browsa-io/ghostwright/main/assets/logo-light.svg" width="360">
+    </picture>
+  </a>
+</p>
 
-Browser agents that replay without a model.
+<p align="center"><b>Browser agents that replay without a model.</b></p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/ghostwright"><img alt="npm" src="https://img.shields.io/npm/v/ghostwright?color=1a8f4c"></a>
+  <a href="https://github.com/browsa-io/ghostwright/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
+  <a href="https://github.com/browsa-io/ghostwright/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/browsa-io/ghostwright/ci.yml?branch=main&label=ci"></a>
+  <img alt="Node 20 or newer" src="https://img.shields.io/node/v/ghostwright">
+  <a href="https://browsa.io"><img alt="Made by Browsa" src="https://img.shields.io/badge/made%20by-Browsa-1a8f4c"></a>
+</p>
+
+<p align="center">
+  <a href="https://browsa.io/ghostwright">Docs</a> ·
+  <a href="#quickstart">Quickstart</a> ·
+  <a href="https://github.com/browsa-io/ghostwright">⭐ Star this repo</a>
+</p>
+
+<p align="center">
+  <img alt="examples/replay.ts records a flow with 2 model calls, then replays it with 0 model calls in 538 ms" src="https://raw.githubusercontent.com/browsa-io/ghostwright/main/assets/hero.png" width="880">
+</p>
+
+## Why
+
+- **Replay with 0 model calls.** Describe each step in plain words once; Ghostwright saves what worked as a recipe, and later runs replay it without a model. When a site changes, the broken step is repaired with one model call and kept only after the whole flow passes, or held as a draft for your review.
+- **Secrets by reference, locked to their sites.** The model sees `%password%`, never the value. The value is typed only into a field on an origin you allowed, and never reaches a prompt, a trace or a saved flow.
+- **Runs where your browser is.** Your local Chrome, any CDP endpoint, or Browsa's cloud browsers. Any model: OpenAI, Anthropic, Google, OpenRouter, DeepSeek, or an OpenAI-compatible endpoint. MIT licensed.
+
+## Quickstart
+
+```sh
+npm install ghostwright zod
+```
+
+```ts
+import { Ghostwright } from "ghostwright";
+import { z } from "zod";
+
+const gw = await Ghostwright.create({ model: "openai/gpt-5.6-luna" });  // reads OPENAI_API_KEY
+const flow = await gw.flow("travel-books", { params: { category: "Travel" } });
+await flow.goto("https://books.toscrape.com/");
+await flow.act("open the %category% category");                        // the model picks the link
+await flow.extract("every book title", z.object({ titles: z.array(z.object({ title: z.string() })) }));
+await flow.save();                                                      // .ghostwright/flows/travel-books.json
+const run = await gw.run("travel-books", { category: "Poetry" });       // replay: run.meta.modelCalls is 0
+await gw.close();
+```
+
+Ghostwright is an ES module and the snippets use top-level `await`, so your project must be one too. In a new project (`npm init -y`), run `npm pkg set type=module` once; then save the snippet as `index.js` and run `node index.js`, or as `index.ts` and run `npx tsx index.ts`. Without that setting, name the file `index.mjs` (`node index.mjs`) or `index.mts` (`npx tsx index.mts`).
+
+It drives the Chrome installed on your machine (`local()`); no browser download. From a terminal: `GHOSTWRIGHT_MODEL=openai/gpt-5.6-luna npx ghostwright extract https://books.toscrape.com "every book title"` prints JSON and what it cost.
+
+## First run vs replay
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/browsa-io/ghostwright/main/assets/speed-dark.svg">
+  <img alt="Median seconds per run. books-category: run 1 11.4 s with 2 model calls, replay 2.5 s with 0. books-detail: 4.4 s with 2, replay 3.5 s with 1. quotes-tag: 8.3 s with 2, replay 2.3 s with 0. login: 11.5 s with 4, replay 7.0 s with 1." src="https://raw.githubusercontent.com/browsa-io/ghostwright/main/assets/speed-light.svg" width="880">
+</picture>
+
+| Flow | Run 1 (records) | Runs 2-5 (replay), median and range | Model calls per run: run 1 / replay | Model cost per run: run 1 / replay | Passed: run 1, replays |
+|---|---|---|---|---|---|
+| `books-category` books.toscrape.com: open a category, read every book with its price | 11.4 s | 2.5 s (0.5 s to 14.3 s) | 2 / 0 | $0.0016 / $0 | 3/3, 12/12 |
+| `books-detail` books.toscrape.com: open a book from the front page, read its price and whether it is in stock | 4.4 s | 3.5 s (1.6 s to 5.7 s) | 2 / 1 | $0.00079 / $0.00029 | 3/3, 12/12 |
+| `quotes-tag` quotes.toscrape.com: open a tag, read every quote with its author | 8.3 s | 2.3 s (1.9 s to 2.3 s) | 2 / 0 | $0.0022 / $0 | 3/3, 12/12 |
+| `login` the-internet.herokuapp.com: sign in with the site's public demo account, read the message | 11.5 s | 7.0 s (6.0 s to 7.6 s) | 4 / 1 | $0.00083 / $0.00014 | 3/3, 12/12 |
+
+**How this was measured** (2026-11-19, [`bench/first-vs-replay.mts`](bench/first-vs-replay.mts), raw runs in [`bench/results/`](bench/results/)):
+
+- Run 1 records the flow with `google/gemini-3.1-flash-lite` through OpenRouter. Runs 2-5 call `run()` on it with the same inputs and default options (a broken step would be repaired with the model, and counted). Each of 3 trials records every flow again under a new name. Medians are over 3 recordings and 12 replays.
+- Wall clock from the first call to the result, in one headless local Chrome that was already open, on an Apple M2 laptop, over the internet to the public sites. Site load time is included, and it varies: one trial's books.toscrape.com replays took 6 to 14 s against 0.5 s in another. Most of the login replay is the site itself: loading the form and signing in take about 2 to 3 s each.
+- Model cost is what `usage()` reports: the provider's token counts at the SDK's price table. The whole benchmark (60 runs, 60 passed) made 54 model calls for $0.022.
+- Two flows keep one model call per replay: their extract did not compile to a page read, so it asks the model each run, and `flow.save()` warns about it. `books-detail` reads "in stock" as a yes or no, which takes judgment, and the login message did not compile either.
+- The code measured is this repository's on that date, which includes a replay fix made after 0.1.0 (two links on a page with the same name).
+
+Reproduce it: `OPENROUTER_API_KEY=... npx tsx bench/first-vs-replay.mts`, then `npx tsx bench/render-chart.mts` to redraw the chart. `--new-params` replays with other inputs (another category, book or tag) instead of the same ones.
+
+## How it works
 
 Describe a step in plain words once. Ghostwright asks a model, does it with real input, checks that it worked, and saves it as a recipe. Every later run replays the recipe with **0 model calls**. When the site changes, the one broken step is repaired with one model call, and the fix is kept only after the whole flow passes.
 
@@ -11,20 +92,11 @@ Describe a step in plain words once. Ghostwright asks a model, does it with real
 - Safe by default: no orders, payments or subscriptions unless you allow them.
 - MIT licensed.
 
-## Install
+### Without a flow
 
-```sh
-npm install ghostwright zod
-```
-
-It drives the Chrome installed on your machine (`local()`); no browser download.
-
-## Quickstart
+`act`, `extract` and the rest work on their own too; only a flow is saved and replayed.
 
 ```ts
-import { Ghostwright } from "ghostwright";
-import { z } from "zod";
-
 const gw = await Ghostwright.create({ model: "openai/gpt-5.6-luna" });
 await gw.goto("https://books.toscrape.com");
 await gw.act("open the Travel category");
@@ -32,10 +104,6 @@ const { data } = await gw.extract("every book with its price", z.object({ books:
 console.log(data.books, gw.usage());
 await gw.close();
 ```
-
-Ghostwright is an ES module and the snippets use top-level `await`, so your project must be one too. In a new project (`npm init -y`), run `npm pkg set type=module` once; then save the snippet as `index.js` and run `node index.js`, or as `index.ts` and run `npx tsx index.ts`. Without that setting, name the file `index.mjs` (`node index.mjs`) or `index.mts` (`npx tsx index.mts`).
-
-Or from a terminal: `GHOSTWRIGHT_MODEL=openai/gpt-5.6-luna npx ghostwright extract https://books.toscrape.com "every book title"` prints JSON and what it cost.
 
 ## Record once, replay with no model
 
@@ -281,6 +349,7 @@ await gw.unpush("travel-books");                       // deletes its robot and 
 - TypeScript only; the Python client comes next.
 - `agent()` has no coordinate-only mode for computer-use models yet.
 - `check()` always calls the model; compiling a passing check into a replay assertion comes in 0.2.
+- A click on one item of a list, recorded with a param, keeps the closest heading before it as context, and on a page of cards that heading can be the card before. A replay with another item then repairs that step (one model call). The benchmark's `books-detail` flow shows it with `--new-params`.
 - Locally, stock Chrome faces bot walls like any automated browser. Attaching goes through Playwright, which a page can notice; Phantom is the browser for protected sites.
 - The purchase guard reads labels and forms. A button whose only label is an image with no text, outside any order or card form, is not recognised.
 - `allowedOrigins` filters page loads, not subresources: an image or script on an allowed page can still reach another origin.

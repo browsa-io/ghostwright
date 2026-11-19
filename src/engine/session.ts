@@ -793,8 +793,9 @@ export class PageSession {
         }
       };
       const order: string[] = [];
+      let rn: typeof sn.items = [];
       if (t.role && t.name) {
-        let rn = findAll(sn.items, t.role, t.name);
+        rn = findAll(sn.items, t.role, t.name);
         if (t.frame) rn = rn.filter(e => this.worldMatchesFrame(e.world || "main", t.frame!));
         if (rn.length === 1) return { id: rn[0].id, by: "role" };
         add(rn.map(e => e.id), "role", 2);
@@ -803,7 +804,10 @@ export class PageSession {
       const worlds = [this.main!, ...this.frameWorlds.values()].filter(w => w && (t.frame ? this.worldMatchesFrame(w.key, t.frame) : w.key === "main"));
       for (const w of worlds) {
         let found: { css: number[]; text: number[]; xpath: number[]; near: number[] };
-        try { found = JSON.parse((await this.evalIn(w, `__gw.find(${JSON.stringify({ css: t.css, text: t.text, xpath: t.xpath, near: t.near })})`)).value as string); } catch { continue; }
+        // a target with only role, name and near (a param target: its recorded position is not used) has no
+        // css, text or xpath hits for near to narrow, so near is checked on the role-and-name matches instead
+        const among = t.near && !t.css && !t.text && !t.xpath ? rn.map(e => this.rev.get(e.id)).filter(r => r && r.world === w.key).map(r => r!.local) : undefined;
+        try { found = JSON.parse((await this.evalIn(w, `__gw.find(${JSON.stringify({ css: t.css, text: t.text, xpath: t.xpath, near: t.near, among })})`)).value as string); } catch { continue; }
         const g = (ls: number[]) => ls.map(l => this.gid(w.key, l)).filter(id => sn.byId.has(id));
         const css = g(found.css), text = g(found.text), xp = g(found.xpath), near = g(found.near);
         if (!score.size && css.length === 1) return { id: css[0], by: "css" };
