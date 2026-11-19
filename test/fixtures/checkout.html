@@ -1,0 +1,23 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Checkout – Fixture Shop</title></head>
+<body style="font-family:sans-serif;margin:20px">
+<h1>Your cart</h1>
+<p id="cart">Cart: 1 item</p>
+<button id="add">Add to cart</button>
+<a id="proceed" href="#review">Proceed to checkout</a>
+<label><input type="checkbox" id="news"> Subscribe to our newsletter</label>
+<h2 id="review">Review</h2>
+<p>Total: €12,50</p>
+<button id="place-order" class="primary">Place your order</button>
+<form id="payform">
+  <label>Card name <input id="cardname" type="text"></label>
+  <button type="submit">Pay €12,50</button>
+</form>
+<p id="status">Not ordered</p>
+<script>
+  let n = 1;
+  document.getElementById('add').addEventListener('click', () => { n++; document.getElementById('cart').textContent = 'Cart: ' + n + ' items'; });
+  document.getElementById('place-order').addEventListener('click', () => { document.getElementById('status').textContent = 'ORDER PLACED'; });
+  document.getElementById('payform').addEventListener('submit', e => { e.preventDefault(); document.getElementById('status').textContent = 'PAID'; });
+</script>
+</body></html>

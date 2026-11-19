@@ -1,0 +1,84 @@
+{
+  "name": "ghostwright",
+  "version": "0.1.0",
+  "description": "Browser agents that replay without a model. Record a flow once with any model, replay it with zero model calls.",
+  "license": "MIT",
+  "author": "Browsa <support@browsa.io>",
+  "homepage": "https://github.com/browsa-io/ghostwright#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/browsa-io/ghostwright.git"
+  },
+  "bugs": {
+    "url": "https://github.com/browsa-io/ghostwright/issues"
+  },
+  "keywords": [
+    "browser-automation",
+    "ai-agents",
+    "web-agent",
+    "replay",
+    "playwright",
+    "cdp",
+    "scraping",
+    "llm"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "ghostwright": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "schema",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p . && cp src/engine/pageview.js src/engine/locate.js dist/engine/ && chmod +x dist/cli.js",
+    "test": "vitest run test/unit",
+    "test:e2e": "vitest run test/e2e",
+    "test:smoke": "GHOSTWRIGHT_SMOKE=1 vitest run test/smoke",
+    "typecheck": "tsc --noEmit -p .",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.106",
+    "@ai-sdk/google": "^4.0.122",
+    "@ai-sdk/openai": "^4.0.121",
+    "@ai-sdk/openai-compatible": "^3.0.93",
+    "ai": "^7.0.177",
+    "playwright-core": "~1.65.1"
+  },
+  "peerDependencies": {
+    "browsa": ">=0.4.0",
+    "zod": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "browsa": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7",
+    "zod": "^4.6.7"
+  }
+}

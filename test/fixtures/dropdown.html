@@ -1,0 +1,31 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Shipping – Fixture Shop</title>
+<style>
+  body{font-family:sans-serif;margin:20px}
+  .menu{border:1px solid #888;width:200px;padding:4px;margin-top:4px}
+  .menu [role=option]{padding:4px;cursor:pointer}
+</style></head>
+<body>
+<h1>Shipping</h1>
+<label>Country <select id="country"><option value="">Choose…</option><option value="de">Germany</option><option value="fr">France</option><option value="us">United States</option></select></label>
+<p>Speed</p>
+<button id="speed" aria-haspopup="listbox" aria-expanded="false">Standard</button>
+<div id="speed-menu" class="menu" role="listbox" hidden>
+  <div role="option" data-v="standard">Standard (5 days)</div>
+  <div role="option" data-v="express">Express (2 days)</div>
+  <div role="option" data-v="overnight">Overnight</div>
+</div>
+<p id="summary">Country: none, speed: standard</p>
+<script>
+  const b = document.getElementById('speed'), m = document.getElementById('speed-menu');
+  let speed = 'standard';
+  const show = () => document.getElementById('summary').textContent = 'Country: ' + (document.getElementById('country').selectedOptions[0].text) + ', speed: ' + speed;
+  b.addEventListener('click', () => { m.hidden = !m.hidden; b.setAttribute('aria-expanded', String(!m.hidden)); });
+  m.addEventListener('click', e => {
+    const o = e.target.closest('[role=option]');
+    if (!o) return;
+    speed = o.dataset.v; b.textContent = o.textContent; m.hidden = true; b.setAttribute('aria-expanded', 'false'); show();
+  });
+  document.getElementById('country').addEventListener('change', show);
+</script>
+</body></html>

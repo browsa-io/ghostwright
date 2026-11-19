@@ -1,0 +1,13 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Frames – Fixture Shop</title></head>
+<body style="font-family:sans-serif;margin:20px">
+<h1>Checkout</h1>
+<p>Card details are in a frame from another site.</p>
+<iframe id="same" title="notes" src="/frame-inner.html?who=same" width="420" height="140"></iframe>
+<iframe id="site" title="payment" src="__OTHER_SITE__/frame-inner.html?who=payment" width="420" height="140"></iframe>
+<iframe id="origin" title="coupon" src="__OTHER_ORIGIN__/frame-inner.html?who=coupon" width="420" height="140"></iframe>
+<p id="status">Waiting</p>
+<script>
+  addEventListener('message', e => { if (e.data && e.data.paid) document.getElementById('status').textContent = 'Paid by ' + e.data.paid; });
+</script>
+</body></html>

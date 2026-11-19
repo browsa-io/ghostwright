@@ -1,0 +1,23 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build
+      - run: npx vitest run test/unit
+      - name: Names check
+        run: |
+          if grep -rniE "stagehand|browserbase" --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.github . ; then
+            echo "Ghostwright names no other SDK or company." && exit 1
+          fi

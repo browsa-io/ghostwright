@@ -1,0 +1,9 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Slow – Fixture Shop</title></head>
+<body style="font-family:sans-serif;margin:20px">
+<div id="app"></div>
+<script>
+  // the content comes late, with no request in flight meanwhile
+  setTimeout(() => { document.getElementById('app').innerHTML = '<h1>Deals of the day</h1><p>Three deals</p>'; }, 1200);
+</script>
+</body></html>

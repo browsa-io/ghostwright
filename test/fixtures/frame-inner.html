@@ -1,0 +1,16 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Inner</title></head>
+<body style="font-family:sans-serif;margin:8px">
+<label>Name on card <input id="card-name" type="text"></label>
+<button id="pay">Use this card</button>
+<p id="done"></p>
+<script>
+  const who = new URLSearchParams(location.search).get('who');
+  document.getElementById('pay').textContent = who === 'payment' ? 'Use this card' : who === 'coupon' ? 'Apply coupon' : 'Save note';
+  document.getElementById('pay').addEventListener('click', () => {
+    const n = document.getElementById('card-name').value;
+    document.getElementById('done').textContent = 'Done for ' + n;
+    parent.postMessage({ paid: n }, '*');
+  });
+</script>
+</body></html>

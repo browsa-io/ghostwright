@@ -1,0 +1,28 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Shadow – Fixture Shop</title></head>
+<body style="font-family:sans-serif;margin:20px">
+<h1>Newsletter</h1>
+<open-box></open-box>
+<closed-box style="display:block;width:300px;height:60px"></closed-box>
+<p id="out">Nothing yet</p>
+<script>
+  customElements.define('open-box', class extends HTMLElement {
+    constructor() {
+      super();
+      const r = this.attachShadow({ mode: 'open' });
+      r.innerHTML = '<label>Your email <input id="nl" type="email"></label> <button id="sub">Join the list</button>';
+      r.getElementById('sub').addEventListener('click', () => {
+        document.getElementById('out').textContent = "Joined " + r.getElementById('nl').value;
+      });
+    }
+  });
+  customElements.define('closed-box', class extends HTMLElement {
+    constructor() {
+      super();
+      const r = this.attachShadow({ mode: 'closed' });
+      r.innerHTML = '<button id="like" style="width:120px;height:40px">Like this page</button>';
+      r.getElementById('like').addEventListener('click', () => { document.getElementById('out').textContent = 'Liked'; });
+    }
+  });
+</script>
+</body></html>

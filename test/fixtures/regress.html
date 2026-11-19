@@ -1,0 +1,24 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Sizes & prices – Fixture Shop</title></head>
+<body style="font-family:sans-serif;margin:20px">
+<h1>Sizes</h1>
+<table id="sizes">
+  <thead><tr><th>Size</th><th>In stock</th><th>Price</th></tr></thead>
+  <tbody>
+    <tr><td>S</td><td>Y</td><td>$69.99</td></tr>
+    <tr><td>M</td><td>N</td><td>€12,50</td></tr>
+    <tr><td>L</td><td>Y</td><td>1.234,56 kr</td></tr>
+  </tbody>
+</table>
+<h2>Search results for "mug"</h2>
+<ol class="results">
+  <li>Red <mark>mug</mark>, a sturdy one</li>
+  <li>Blue <mark>mug</mark> with a lid</li>
+</ol>
+<button id="break">Break it</button>
+<a id="partner" href="__OTHER_ORIGIN__/books.html">Partner shop</a>
+<a id="newtab" href="/account.html" target="_blank">Account in a new tab</a>
+<script>
+  document.getElementById('break').addEventListener('click', () => { document.title = document.title; throw new TypeError('boom-4711 cannot read the cart'); });
+</script>
+</body></html>

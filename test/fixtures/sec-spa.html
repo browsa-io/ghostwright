@@ -1,0 +1,18 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>App – Fixture Shop</title></head>
+<body>
+<h1>App</h1>
+<!-- a login form with no method, posted by a script (common in single-page apps) -->
+<form id="spa"><label>App password <input type="password" name="p" id="sp"></label><button>Sign in to app</button></form>
+<p id="state">Signed out</p>
+<!-- a form with no method and no script: the browser would send it as GET -->
+<form action="/spa-get"><label>Plain token <input type="text" name="q" id="pt"></label><button>Send token</button></form>
+<script>
+  spa.addEventListener('submit', async e => {
+    e.preventDefault();
+    const r = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'ada@example.com', password: sp.value }) });
+    const j = await r.json();
+    state.textContent = j.ok ? 'Signed in as ' + j.name : 'Wrong password';
+  });
+</script>
+</body></html>

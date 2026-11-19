@@ -1,0 +1,12 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Checkout – Fixture Shop</title></head>
+<body style="font-family:sans-serif;margin:20px">
+<h1>Checkout</h1>
+<form action="/order?case=ja" method="post"><label>Coupon A <input name="ca" id="ca"></label><button type="submit">注文を確定する</button></form>
+<form action="/order?case=img" method="post"><label>Coupon B <input name="cb" id="cb"></label><input type="image" src="/none.png" width="80" height="30" style="background:#0a0"></form>
+<form action="/order?case=keys" method="post"><label>Coupon C <input name="cc" id="cc"></label><button type="submit" id="po">Place order</button></form>
+<form id="f2" action="/order?case=formattr" method="post"><label>Coupon D <input name="cd" id="cd"></label></form>
+<div><button type="submit" form="f2">Place order now</button></div>
+<form action="/order?case=card" method="post"><label>Card number <input name="cardnumber" autocomplete="cc-number" id="card"></label><button type="submit">Continue</button></form>
+<iframe src="__OTHER_SITE__/sec-paybtn.html" width="300" height="80" title="Pay"></iframe>
+</body></html>

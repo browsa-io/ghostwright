@@ -1,0 +1,24 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Sign in – Fixture Shop</title>
+<style>body{font-family:sans-serif;margin:40px} form{display:grid;gap:10px;max-width:320px} .err{color:#b00}</style>
+</head><body>
+<h1>Sign in</h1>
+<form id="login" action="/account.html" method="post">
+  <label>Email <input type="email" name="email" id="email" autocomplete="username" required></label>
+  <label>Password <input type="password" name="password" id="password" required></label>
+  <label><input type="checkbox" name="remember" id="remember"> Keep me signed in</label>
+  <button type="submit" id="signin" data-variant="__VARIANT__">__SIGNIN__</button>
+  <p class="err" id="err" hidden>Wrong email or password</p>
+</form>
+<script>
+  document.getElementById('login').addEventListener('submit', e => {
+    e.preventDefault();
+    const em = document.getElementById('email').value, pw = document.getElementById('password').value;
+    fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: em, password: pw }) })
+      .then(r => r.json()).then(j => {
+        if (j.ok) location.href = '/account.html?user=' + encodeURIComponent(j.name);
+        else document.getElementById('err').hidden = false;
+      });
+  });
+</script>
+</body></html>

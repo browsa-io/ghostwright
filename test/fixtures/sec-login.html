@@ -1,0 +1,19 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Sec login – Fixture Shop</title></head>
+<body style="font-family:sans-serif;margin:20px">
+<h1>Sign in</h1>
+<form id="f" action="/account.html" method="post">
+  <label>Email <input type="email" name="email" id="email"></label>
+  <label>API key <input type="text" name="apikey" id="apikey"></label>
+  <label>Password <input type="password" name="pw" id="pw"></label>
+  <label>Code <input type="text" name="code" id="code" maxlength="4"></label>
+  <button type="submit" id="signin">Sign in</button>
+</form>
+<form action="/search" method="get"><label>Search <input type="search" name="q" id="q"></label><button>Go</button></form>
+<form action="/lookup" method="get"><label>Member number <input type="text" name="m" id="m"></label><button>Look up</button></form>
+<div><span id="notes-label">Notes</span><div id="notes" contenteditable="true" role="textbox" aria-labelledby="notes-label" style="border:1px solid #999;min-height:30px"></div></div>
+<p id="echo"></p>
+<script>
+  apikey.addEventListener('input', () => { echo.textContent = 'Key fingerprint: ' + apikey.value.slice(0, 14) + '... (' + apikey.value.length + ' chars)'; });
+</script>
+</body></html>
