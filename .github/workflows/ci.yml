@@ -17,7 +17,12 @@ jobs:
       - run: npm run build
       - run: npx vitest run test/unit
       - name: Names check
+        env:
+          NAMES_PATTERN: ${{ secrets.NAMES_PATTERN }}
         run: |
-          if grep -rniE "stagehand|browserbase" --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.github . ; then
+          # The list of names this project never mentions is kept outside the repository.
+          # Without it (a pull request from a fork) the check is skipped.
+          if [ -z "$NAMES_PATTERN" ]; then echo "names list not available here; skipped"; exit 0; fi
+          if grep -rniE "$NAMES_PATTERN" --exclude-dir=node_modules --exclude-dir=.git . > /dev/null; then
             echo "Ghostwright names no other SDK or company." && exit 1
           fi
