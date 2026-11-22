@@ -2,7 +2,7 @@
 // acts, and checks the effect. A step that breaks is repaired with one model
 // call; the repaired recipe becomes the active version only after the whole
 // run passed (output valid, assertions true).
-import { compileExtract, readJSON } from "./compile.js";
+import { compileExtract, readDom, ReadChanged, readJSON } from "./compile.js";
 import type { Action, Target } from "./engine/session.js";
 import { FlowError, GhostwrightError, SecretOriginError } from "./errors.js";
 import { checkEffect, type Ghostwright, type Meta } from "./ghostwright.js";
@@ -14,7 +14,7 @@ import { SecretNotAllowedError, TOKEN } from "./secrets.js";
 export interface RunOptions {
   /** repair broken steps with the model (default: the recipe's repair mode, "auto") */
   repair?: boolean;
-  /** at most this many repaired steps in one run (default: recipe repair.max_steps, 3) */
+  /** at most this many repaired steps in one run (default: recipe repair.max_steps, else every step: a redesign may break them all) */
   maxRepairs?: number;
 }
 
@@ -44,7 +44,9 @@ export async function runFlow<T>(gw: Ghostwright, name: string, params: Record<s
     if (!(k in params)) throw new FlowError("params_invalid", `flow "${name}" needs param "${k}"`);
   }
   const allowRepair = (o.repair ?? recipe.repair?.mode !== "off") && gw.hasModel;
-  const maxRepairs = o.maxRepairs ?? recipe.repair?.max_steps ?? 3;
+  // a redesigned site breaks most steps at once: by default each may be repaired once, which costs
+  // what recording the flow again would
+  const maxRepairs = o.maxRepairs ?? recipe.repair?.max_steps ?? Math.max(3, recipe.steps.length);
   const steps = recipe.steps.map(s => ({ ...s }));
   const reports: StepReport[] = [];
   const repaired: string[] = [];
@@ -93,9 +95,16 @@ export async function runFlow<T>(gw: Ghostwright, name: string, params: Record<s
         steps.splice(i - 1, 1);
         at = i - 1;
       }
-      steps.splice(at, 1, ...fresh);
+      // An instruction that took several actions was recorded as several steps with the same goal
+      // (open the dropdown, pick the option). A repair carries the instruction out again, whole: when
+      // it took more than one action, the steps after this one that belong to the same instruction
+      // are replaced with it, not run again on top of it.
+      let also = 0;
+      if (s.goal && s.kind !== "extract") while (also < fresh.length - 1 && steps[at + 1 + also] && steps[at + 1 + also].goal === s.goal && steps[at + 1 + also].kind !== "extract") also++;
+      const gone = steps.slice(at + 1, at + 1 + also).map(x => x.id);
+      steps.splice(at, 1 + also, ...fresh);
       i = at + fresh.length - 1;
-      repaired.push(s.id);
+      repaired.push(s.id, ...gone);
       reports.push({ id: s.id, kind: s.kind, layer: "repair", ms: Date.now() - t0, repaired: true });
     }
   }
@@ -113,7 +122,10 @@ export async function runFlow<T>(gw: Ghostwright, name: string, params: Record<s
   }
   let promoted: number | undefined;
   let draft: { version: number; why: string } | undefined;
-  if (repaired.length) {
+  // a "repair" that ended on the very steps the flow already had (the element only came late, and
+  // the model picked the same one) is not a new version
+  const same = repaired.length > 0 && JSON.stringify(steps) === JSON.stringify(recipe.steps);
+  if (repaired.length && !same) {
     const next: Recipe = gw.secrets.safeRecipe({ ...recipe, version: nextVersion(gw, recipe), steps, meta: { ...(recipe.meta || {}), repaired_from: recipe.version, repaired_steps: repaired, repaired_at: new Date().toISOString() } });
     if (recipe.repair?.mode === "review" || reviewWhy.size) {
       draft = { version: next.version, why: reviewWhy.size ? [...reviewWhy].join("; ") : "the flow's repairs are reviewed (repair.mode review)" };
@@ -189,15 +201,28 @@ export function shownTokens(s: string): string {
 }
 
 async function runStep(gw: Ghostwright, s: Step, params: Record<string, unknown>, saved: Record<string, unknown>, output: Record<string, unknown>, loose = false): Promise<Omit<StepReport, "id" | "kind" | "ms">> {
-  const session = gw.session;
   const act = async (a: Action) => {
-    const r = await session.act(a);
+    const r = await gw.session.act(a);
     // a safety guard said no: the run stops there, it is not repaired another way
     if (r.guard) throw new FlowError("blocked", `step ${s.id} (${s.goal || s.kind}) was refused: ${r.reason}`, s.id);
     if (r.status === "challenge") await gw.handleChallenge(r.challenge?.kind || "unknown");
-    else {
-      const chk = checkEffect(a, r, s.effect ?? null);
+    else if (r.status === "ok" && r.dialog) {
+      // the action opened a JavaScript dialog: answered as it was when recorded, else the step fails
+      // with the dialog left for the repair to read and answer
+      if (!s.dialog) throw new StepFail(`a ${r.dialog.type || "dialog"} opened that the flow has no answer for: ${JSON.stringify(String(r.dialog.message || "").slice(0, 120))}`);
+      let text: string | undefined;
+      if (s.dialog === "accept" && s.dialog_text != null) {
+        const t = fillText(gw, s.dialog_text, params);
+        text = t.secretText ? await t.secretText.resolve(gw.session.currentURL) : t.text;
+      }
+      const d = await gw.session.act({ action: "dialog", accept: s.dialog === "accept", ...(text != null ? { text } : {}) });
+      if (d.status !== "ok") throw new StepFail(d.reason || "the dialog could not be answered");
+    } else {
+      if (s.dialog) throw new StepFail("the dialog that opened here when the flow was recorded did not open");
+      const stateAfter = a.id != null ? gw.session.last?.byId.get(a.id)?.state : undefined;
+      const chk = checkEffect(a, r, s.effect ?? null, { control: true, stateAfter });
       if (!chk.ok) throw new StepFail(chk.reason || "failed");
+      await gw.followNewTab(r);
       // it went where it went when recorded
       const want = s.effect?.kind === "navigate" ? s.effect.path : undefined;
       if (want && r.navigation && !r.navigation.sameDocument) {
@@ -217,20 +242,32 @@ async function runStep(gw: Ghostwright, s: Step, params: Record<string, unknown>
       const r = renderTarget(target, params);
       const strict: Target = { role: r.role, frame: r.frame, near: r.near };
       for (const k of tpl) (strict as any)[k] = (r as any)[k];
+      // the item's text with a param in it ("{{item}} $49 In stock"): this run's value must be
+      // there; the rest was the recorded item's
+      if (tpl.includes("within")) strict.within = paramValues(target.within!, params);
       // only the context has the param ("Add" near "{{item}}"): the label and text still count
-      if (!tpl.some(k => k !== "near")) { strict.name = r.name; strict.text = r.text; }
-      const hit = await session.resolve(strict);
+      if (!tpl.some(k => k !== "near" && k !== "within")) { strict.name = r.name; strict.text = r.text; }
+      const until = Date.now() + patience(s);
+      let hit = await gw.session.resolve(strict);
+      while (!hit && Date.now() < until) { await new Promise(r => setTimeout(r, 250)); hit = await gw.session.resolve(strict); }
       if (!hit) throw new StepFail(`no element matches ${tpl.map(k => `${k} "${(r as any)[k]}"`).join(" or ")} (the params of this run)`);
       return hit;
     }
-    const hit = await session.resolve(renderTarget(target, params));
-    if (!hit) throw new StepFail("the element was not found");
-    return hit;
+    // an element that comes late (a button a script adds, a result that loads) is waited for, about
+    // as long as it took when the flow was recorded, before the step fails and is repaired
+    const rendered = renderTarget(target, params);
+    const until = Date.now() + patience(s);
+    for (;;) {
+      const hit = await gw.session.resolve(rendered);
+      if (hit) return hit;
+      if (Date.now() >= until) throw new StepFail("the element was not found");
+      await new Promise(r => setTimeout(r, 250));
+    }
   };
   switch (s.kind) {
     case "navigate": {
       const url = render(s.url!, params);
-      const r = await session.act({ action: "navigate", url });
+      const r = await gw.session.act({ action: "navigate", url });
       if (r.guard) throw new FlowError("blocked", `step ${s.id} (navigate) was refused: ${r.reason}`, s.id);
       if (r.status === "challenge") await gw.handleChallenge(r.challenge?.kind || "unknown");
       else if (r.status !== "ok") throw new StepFail(r.reason || "navigation failed");
@@ -239,6 +276,9 @@ async function runStep(gw: Ghostwright, s: Step, params: Record<string, unknown>
     case "click": {
       const hit = await find();
       const action = s.state === "checked" ? "check" : s.state === "unchecked" ? "uncheck" : "click";
+      // a toggle already in the state the step left it in (a section already open) is not clicked again
+      const want = s.effect?.state, now = gw.session.last?.byId.get(hit.id)?.state;
+      if (action === "click" && want && now && Object.entries(want).every(([k, v]) => now[k] === v)) return { layer: "replay", by: hit.by };
       await act({ action, id: hit.id });
       return { layer: "replay", by: hit.by };
     }
@@ -260,8 +300,19 @@ async function runStep(gw: Ghostwright, s: Step, params: Record<string, unknown>
       return { layer: "replay" };
     case "scroll": {
       const v = s.value || "down";
-      const dy = /^-?\d+$/.test(v) ? +v : (v === "up" ? -1 : 1) * 700 * (s.pages || 1);
-      await act({ action: "scroll", dy });
+      const id = s.target ? (await find()).id : undefined;
+      // a page that cannot scroll yet (its content comes a moment later) is given the step's patience
+      const until = Date.now() + patience(s);
+      for (;;) {
+        try {
+          if (/^(top|bottom|\d+(\.\d+)?%)$/.test(v)) await act({ action: "scroll", to: v, id });
+          else await act({ action: "scroll", dy: /^-?\d+$/.test(v) ? +v : (v === "up" ? -1 : 1) * 700 * (s.pages || 1), id });
+          break;
+        } catch (e) {
+          if (!(e instanceof StepFail) || !/no effect/.test(e.why) || Date.now() >= until) throw e;
+          await new Promise(r => setTimeout(r, 250));
+        }
+      }
       return { layer: "replay" };
     }
     case "wait": {
@@ -313,15 +364,23 @@ async function runStep(gw: Ghostwright, s: Step, params: Record<string, unknown>
         value = readJSON(d.json, how);
         layer = "page_json";
       } else {
-        value = await gw.session.domExtract({ css: how.css ?? null, fields: how.fields, limit: how.limit });
-        if (Array.isArray(value)) value = value.filter(v => v && (typeof v !== "object" || Object.values(v as object).some(x => x != null && x !== "")));
+        const read = async () => {
+          try { return await readDom(gw.session, how); } catch (e) { if (e instanceof ReadChanged) throw new StepFail(e.message); throw e; }
+        };
+        const empty = (v: unknown) => v == null || (Array.isArray(v) ? !v.length || v.every(r => r == null || (typeof r === "object" && Object.values(r as object).every(x => x == null || x === ""))) : typeof v === "object" && Object.values(v as object).every(x => x == null || x === ""));
+        // content that comes late (a result that loads after a click) is waited for, as above
+        const until = Date.now() + patience(s);
+        value = await read();
+        while (empty(value) && Date.now() < until) { await new Promise(r => setTimeout(r, 250)); value = await read(); }
+        if (how.pick && Array.isArray(value)) value = value.map(r => (r as any)?.[how.pick!]);
+        if (Array.isArray(value)) value = value.filter(v => v != null && v !== "" && (typeof v !== "object" || Object.values(v as object).some(x => x != null && x !== "")));
         if (Array.isArray(value) && how.limit) value = value.slice(0, how.limit);
         layer = "css";
       }
       if (value == null || (Array.isArray(value) && !value.length && !how.allow_empty) || (typeof value === "object" && !Array.isArray(value) && !Object.keys(value as object).length)) {
         throw new StepFail("the extract found nothing");
       }
-      if (how.fields && !how.model) {
+      if (how.fields && !how.model && !how.pick) {
         // a field that no longer resolves anywhere means the page changed
         const rows = Array.isArray(value) ? value : [value];
         for (const k of Object.keys(how.fields)) if (rows.every(r => (r as any)?.[k] == null)) throw new StepFail(`field "${k}" was not found`);
@@ -343,6 +402,24 @@ async function runStep(gw: Ghostwright, s: Step, params: Record<string, unknown>
   throw new StepFail(`step kind ${s.kind} is not supported by this version`);
 }
 
+/** What a step did when it was recorded, in a few words, for a repair. */
+function recordedAs(s: Step, params: Record<string, unknown>): string {
+  const t = s.target ? renderTarget(s.target, params) : undefined;
+  const what = t ? [t.role, t.name ? JSON.stringify(t.name) : t.text ? JSON.stringify(t.text) : "", t.within ? `in the item ${JSON.stringify(t.within)}` : t.near ? `under ${JSON.stringify(t.near)}` : ""].filter(Boolean).join(" ") : "";
+  const did = s.kind === "type" ? `typed into ${what}` : s.kind === "select" ? `chose ${JSON.stringify(render(s.value || "", params))} in ${what}` : s.kind === "click" ? `clicked ${what}` : s.kind === "wait" && s.hover ? `hovered ${what}` : s.kind;
+  const then = s.effect?.kind === "navigate" ? `, and the page went to ${s.effect.path ? render(s.effect.path, params) : "another page"}` : s.effect?.state ? `, and it became ${Object.entries(s.effect.state).map(([k, v]) => `${k}=${v}`).join(", ")}` : "";
+  return what ? `When recorded it ${did}${then}. The page has changed since: find what does the same now (its label, place or kind may differ).` : "";
+}
+
+/**
+ * How long a replay waits for a step's element or content before it gives up: about one and a half
+ * times what the step took when recorded (that includes the model's time, so it errs long), at least
+ * 1.5 s, at most 15 s; 3 s for a flow recorded before this was kept.
+ */
+export function patience(s: Step): number {
+  return s.after_ms == null ? 3000 : Math.min(15000, Math.max(1500, Math.round(s.after_ms * 1.5)));
+}
+
 const PARAM = /\{\{\s*(?:json:)?[A-Za-z_][A-Za-z0-9_]*\s*\}\}/;
 
 /** Does a step put a param into the page (an address, typed text, a locator)? */
@@ -352,7 +429,12 @@ function usesParams(s: Step): boolean {
 
 /** The locators of a target that hold a {{param}}. */
 function templated(t: Target): (keyof Target)[] {
-  return (["name", "css", "text", "near"] as const).filter(k => typeof t[k] === "string" && PARAM.test(t[k]!));
+  return (["name", "css", "text", "near", "within"] as const).filter(k => typeof t[k] === "string" && PARAM.test(t[k]!));
+}
+
+/** The values this run gives the params a text holds, joined. */
+function paramValues(s: string, params: Record<string, unknown>): string {
+  return [...s.matchAll(new RegExp(PARAM.source, "g"))].map(m => render(m[0], params)).join(" ");
 }
 
 function renderTarget(t: Target, params: Record<string, unknown>): Target {
@@ -379,14 +461,25 @@ async function repairStep(gw: Ghostwright, recipe: Recipe, steps: Step[], i: num
       if (compiled) return compiled.steps;
       return [{ id: s.id, kind: "extract", from: "page", how: { model: true }, schema_ref: "output", goal, output_schema: sch.json }];
     }
-    const view = await gw.view();
     const vars: Record<string, string> = Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)]));
     const shown = gw.showVars(goal, vars);
-    const d = (await gw.ask("repair", P.ACT_SYSTEM, P.actPrompt(shown, view.text, P.REPAIR_NOTE(shown, why)))) as any;
+    const note = P.REPAIR_NOTE(shown, why, recordedAs(s, params));
+    const secrets = stepSecrets(gw, s.text || "");
+    if (!secrets.length) {
+      // the same way act() works (whole page, folded lists, menus that open), told what the step did before
+      const ex = await gw.actCore(goal, vars, new Set(), note, params);
+      if (!ex.ok || !ex.steps.length) return null;
+      // a step that navigated must navigate again
+      if (s.effect?.kind === "navigate" && !ex.steps.some(x => x.effect?.kind === "navigate" || x.kind === "navigate")) return null;
+      ex.steps[0].id = s.id;
+    if (s.after_ms != null) ex.steps[0].after_ms = s.after_ms;
+      return ex.steps;
+    }
+    const view = await gw.view("page", 6000, false, 0, true);
+    const d = (await gw.ask("repair", P.ACT_SYSTEM, P.actPrompt(shown, view.text, note))) as any;
     if (!d || d.action === "none") return null;
     // a secret goes into a field it was not recorded for only after review:
     // the repaired step is kept as a draft, and nothing is typed now
-    const secrets = stepSecrets(gw, s.text || "");
     if (d.action === "type" && secrets.length && d.id != null && gw.session.last?.byId.has(Number(d.id))) {
       const target = (await gw.session.locators(Number(d.id))) ?? {};
       if (!(s.kind === "type" && sameTarget(s.target, target))) {
@@ -397,6 +490,7 @@ async function repairStep(gw: Ghostwright, recipe: Recipe, steps: Step[], i: num
     const ex = await gw.execute(d, vars, goal, params, new Set(secrets));
     if (!ex.ok || !ex.steps.length) return null;
     ex.steps[0].id = s.id;
+    if (s.after_ms != null) ex.steps[0].after_ms = s.after_ms;
     return ex.steps;
   } catch (e) {
     gw.tracer.write("repair", { step: s.id, status: "failed", reason: (e as Error).message });

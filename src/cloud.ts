@@ -137,6 +137,15 @@ export class BrowsaCloud {
   static toBrowsa(r: Recipe, secrets?: Secrets): Recipe {
     const body = JSON.parse(JSON.stringify(r)) as Recipe;
     for (const s of body.steps) {
+      // locators only local replays read are left out
+      for (const t of [s.target, s.for?.target]) if (t) delete (t as any).within;
+      // a read by pattern is a local one: on Browsa that extract asks the model
+      if (s.kind === "extract" && (s.how?.match || s.how?.pick || s.how?.nested)) {
+        const into = s.how.into;
+        s.output_schema = s.output_schema ?? (into && body.output?.properties?.[into] ? { type: "object", properties: { [into]: body.output.properties[into] }, required: [into] } : body.output);
+        s.from = "page";
+        s.how = { model: true };
+      }
       for (const f of STEP_TEXT_FIELDS) {
         const v = s[f];
         if (v != null && new RegExp(TOKEN.source).test(typeof v === "string" ? v : JSON.stringify(v))) {
@@ -159,6 +168,7 @@ export class BrowsaCloud {
     return body;
   }
 
+  /** Uploads a saved flow to Browsa as a recipe (secret tokens by name, never values). */
   async push(name: string, o: PushOptions = {}): Promise<PushResult> {
     const r = this.store.load(name);
     if (!r) throw new FlowError("not_found", `no saved flow "${name}" in ${this.store.dir}`);
@@ -206,6 +216,7 @@ export class BrowsaCloud {
     return this.links()[name];
   }
 
+  /** Runs a flow on Browsa (pushing it first when the local flow is newer) and waits for the result. Paid with Browsa credits. */
   async run<T = any>(name: string, params: Record<string, unknown> = {}, o: { timeoutMs?: number; proxy?: Record<string, unknown>; push?: PushOptions } = {}): Promise<CloudRun<T>> {
     const link = await this.ensurePushed(name, o.push);
     const deadline = Date.now() + (o.timeoutMs ?? 300000);
@@ -268,6 +279,7 @@ export class BrowsaCloud {
     return { robotId: l.robotId, recipeId: l.recipeId };
   }
 
+  /** The Browsa recipe and robot a flow was pushed to, if any. */
   linked(name: string): Link | undefined { return this.links()[name]; }
 }
 

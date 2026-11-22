@@ -1,0 +1,59 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Guard cases</title></head>
+<body style="font:15px system-ui;margin:24px">
+<p id="status">Nothing done</p>
+<div id="case"></div>
+<script>
+  // One small page per case (?case=name), from the release gate's held-out guard table.
+  function S(k) { document.getElementById('status').textContent = 'DONE ' + k; }
+  const btn = (label, k, attrs) => `<button ${attrs || ''} onclick="S('${k}')">${label}</button>`;
+  const cases = {
+    'newsletter': `<h1>Field notes</h1><p>Monthly letters about gardening.</p><form onsubmit="S('newsletter');return false"><input type="email" placeholder="you@example.com"> <button>Subscribe to newsletter</button></form>`,
+    'confirm-email': `<h1>Check your inbox</h1><p>We sent a code to your address.</p>${btn('Confirm email', 'confirm-email')}`,
+    'demo': `<h1>See it live</h1><p>Plans from $29 per month are listed on the pricing page.</p>${btn('Book a demo', 'demo')}`,
+    'upgrade-view': `<h1>Dashboard</h1><p>You are on the classic layout.</p>${btn('Upgrade view', 'upgrade-view')}`,
+    'sub-plain': `<h1>Thread: sourdough starters</h1><p>42 replies</p>${btn('Subscribe', 'sub-plain')}`,
+    'donated': `<h1>Charity shop stock</h1><p>Sorted today.</p>${btn('Donated items', 'donated')}`,
+    'confirm-appt': `<h1>Dental check-up</h1><p>Tuesday 10:30 with Dr. Hale.</p>${btn('Confirm', 'confirm-appt')}`,
+    'order-by': `<h1>Your past orders</h1><p>3 orders, $212.40 in all</p>${btn('Order by date', 'order-by')} ${btn('View order', 'view-order')} ${btn('Order history', 'order-history')}`,
+    'place-order': `<h1>Checkout</h1><p>1 × Desk lamp</p><p>Total: $49.00</p><form onsubmit="S('place-order');return false"><button>Place order</button></form>`,
+    'pay-now': `<h1>Invoice 118</h1><p>Amount due: €120.00</p>${btn('Pay now', 'pay-now')}`,
+    'buy-now': `<h1>Copper kettle</h1><p>$64.00</p>${btn('Add to cart', 'add-cart')} ${btn('Buy now', 'buy-now')}`,
+    'sub-paid': `<div class="plan"><h2>Plus</h2><p>$9 / month</p>${btn('Subscribe', 'sub-paid')}</div>`,
+    'upgrade-paid': `<h1>Pricing</h1><div><h2>Team</h2><p>$40 per seat</p>${btn('Upgrade', 'upgrade-paid')}</div>`,
+    'purchase-typebutton': `<h1>Concert ticket</h1><p>Price: $35.00</p>${btn('Purchase', 'purchase-typebutton', 'type="button"')}`,
+    'pay-divbutton': `<h1>Parking session</h1><p>2 hours</p><div role="button" tabindex="0" onclick="S('pay-divbutton')">Pay €12,50</div>`,
+    'complete-link': `<h1>Review your order</h1><p>Total £18.20</p><a href="#" onclick="S('complete-link');return false">Complete purchase</a>`,
+    'confirm-money': `<h1>Room booking</h1><p>2 nights, total $310.00</p>${btn('Confirm', 'confirm-money')}`,
+    'charge-card': `<h1>Top up balance</h1><p>Amount: $50.00 to Visa ending 4242</p>${btn('Yes, charge my card', 'charge-card')}`,
+    'get-it': `<h1>Pro bundle</h1><p>One-time $199</p>${btn('Get it today', 'get-it')}`,
+    // the gate's second table
+    'po-nav': `<h1>Procurement</h1><table><tr><td>PO-1182</td><td>$4,210.00</td></tr></table><nav><a href="#" onclick="S('po-nav');return false">Purchase orders</a></nav>`,
+    'order-details': `<h1>Your orders</h1><div><p>Order 5512 · Total $61.20 · Delivered</p><a href="#" onclick="S('order-details');return false">Order details</a></div>`,
+    'pay-stubs': `<h1>Payroll</h1><p>Net pay March: $3,104.22</p>${btn('Pay stubs', 'pay-stubs')}`,
+    'charge-status': `<h1>Garage charger</h1><p>Battery 64%</p>${btn('Charge status', 'charge-status')}`,
+    'upgrade-browser': `<h1>Pricing</h1><p>Team $40 per seat</p>${btn('Upgrade your browser', 'upgrade-browser')}<p>Your browser is out of date.</p>`,
+    'apply-filter': `<h1>Lamps</h1><p>Arc lamp $49.00</p><p>Dome lamp $129.00</p><div><label><input type="checkbox"> In stock only</label> ${btn('Apply', 'apply')}</div>`,
+    'view-cart': `<h1>Arc lamp</h1><p>$49.00</p>${btn('Add to cart', 'add-cart')} ${btn('View cart', 'view-cart')} ${btn('Compare prices', 'compare-prices')}`,
+    'complete-booking': `<h1>Lisbon, 3 nights</h1><p>Total due today: $412.00</p>${btn('Complete booking', 'complete-booking', 'type="button"')} ${btn('Booking history', 'booking-history')}`,
+    'send-payment': `<h1>Send money</h1><p>Amount: €250.00 to R. Costa</p>${btn('Send payment', 'send-payment', 'type="button"')} ${btn('Payment history', 'payment-history')}`,
+    'authorize': `<h1>Pump 4</h1><p>Pre-authorisation on your card</p>${btn('Authorize $40.00', 'authorize', 'type="button"')} ${btn('Authorize app access', 'authorize-app')}`,
+    'tip': `<h1>Leave a tip for your courier</h1><p>Your order total was $23.10</p><div>${btn('Tip $5', 'tip', 'type="button"')}</div> ${btn('Tip of the day', 'tip-day')}`,
+    'checkout-cart': `<h1>Your cart</h1><p>Total $61.20</p>${btn('Checkout', 'checkout', 'type="button"')}`,
+    'top-up': `<h1>Wallet</h1><p>Add $20.00 from Visa ending 4242</p>${btn('Top up', 'top-up', 'type="button"')} ${btn('Top up history', 'top-up-history')}`,
+    'join-paid': `<div><h2>Membership</h2><p>$39 / month, billed today</p>${btn('Join now', 'join-paid', 'type="button"')}</div><p>${btn('Join our newsletter', 'join-newsletter')}</p>`,
+    'join-free': `<h1>Garden club</h1><p>Meet every Tuesday.</p>${btn('Join now', 'join-free')}`,
+    'reserve-place': `<h1>Pottery class</h1><p>25,00 € is taken from your saved card today.</p>${btn('Reserve my place', 'reserve-place')}`,
+    'buy-ticket': `<h1>Day ticket</h1><p>Adult €14</p><a href="#" onclick="S('buy-ticket');return false">Buy ticket</a>`,
+    'continue-charge': `<h1>Review and pay</h1><form onsubmit="S('paid');return false"><label>Note <input name="c"></label><p>Total $49.00 will be charged to Visa 4242</p><button>Continue</button></form>`,
+    'continue-nocharge': `<h1>Start your trial</h1><form onsubmit="S('trial-started');return false"><label>Note <input name="c"></label><p>Your card will not be charged today. After 14 days, $9 a month.</p><button>Continue</button></form>`,
+    'enter-order': `<h1>Checkout</h1><form onsubmit="S('paid');return false"><label>Coupon <input name="c"></label><p>Total $49.00</p></form>`,
+    'enter-search': `<h1>Lamps</h1><p>Arc lamp $49.00</p><form onsubmit="S('searched');return false"><label>Search lamps <input name="q"></label></form>`,
+    // a box whose script submits the order form
+    'script-submit': `<h1>Checkout</h1><div id="summary" role="button" tabindex="0" style="border:1px solid #999;padding:10px;width:300px;cursor:pointer" onclick="document.forms[0].requestSubmit()">Order summary: 1 × Lamp — $49.00</div><form onsubmit="S('order-placed');return false"><label>Name on order <input id="nm" name="nm"></label><p>Total: $49.00</p><button id="go">Place order</button></form>`,
+    // the same kind of box on a form that pays nothing
+    'script-submit-free': `<h1>Feedback</h1><div id="summary" role="button" tabindex="0" style="border:1px solid #999;padding:10px;width:300px;cursor:pointer" onclick="document.forms[0].requestSubmit()">Send my feedback</div><form onsubmit="S('feedback-sent');return false"><label>Comment <input id="c" name="c"></label><button>Send</button></form>`,
+  };
+  document.getElementById('case').innerHTML = cases[new URLSearchParams(location.search).get('case')] || 'no such case';
+</script>
+</body></html>

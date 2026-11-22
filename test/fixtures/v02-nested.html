@@ -1,0 +1,11 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Nested frames – Fixture</title></head>
+<body style="font-family:sans-serif;margin:20px">
+<h1>Order summary</h1>
+<p id="status">Waiting</p>
+<div style="height:300px"></div>
+<iframe id="outer" title="offers" src="__OTHER_SITE__/v02-nest-mid.html" width="520" height="260"></iframe>
+<script>
+  addEventListener('message', e => { if (e.data && e.data.paid) document.getElementById('status').textContent = 'Coupon ' + e.data.paid; });
+</script>
+</body></html>

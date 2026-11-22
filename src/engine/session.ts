@@ -75,13 +75,28 @@ export interface ActResult {
   guard?: boolean;
   focus?: Element;
   volatileIgnored?: number;
+  /** DOM changes the action caused in its document, seen or not (attributes, text, nodes); pages that tick on their own are left out */
+  mutations?: number;
+  /** the element acted on (also when it was given by role and name) */
+  id?: number;
+  /** the target is a control (a button, a link, a field), not plain content */
+  control?: boolean;
+  /** type: the field was read back after typing and holds the text (true) or does not (false); unset when it could not be read */
+  typed?: boolean;
   text: string;
 }
 
 export interface CapturedResponse { url: string; method: string; status: number; body: string; at: number }
 
 /** A locator chain for one element, in the recipe's target shape. */
-export interface Target { role?: string; name?: string; css?: string; text?: string; xpath?: string; near?: string; frame?: string }
+export interface Target {
+  role?: string; name?: string; css?: string; text?: string; xpath?: string;
+  /** the heading, legend or label before the element */
+  near?: string;
+  /** the text of the element's own item (its card, its row), recorded when other controls on the page say the same of themselves */
+  within?: string;
+  frame?: string;
+}
 
 export interface SessionOptions { settle?: Partial<SettleConfig>; callTimeout?: number; readFrames?: boolean; readClosedShadow?: boolean }
 
@@ -114,6 +129,78 @@ const NEEDS_TARGET = new Set("click type select check uncheck hover upload".spli
 const ON_CHALLENGE = new Set("press wait navigate back forward reload".split(" "));
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
+export const SEGMENT_FORMAT: Record<string, string> = { date: "YYYY-MM-DD", time: "HH:MM", "datetime-local": "YYYY-MM-DDTHH:MM", month: "YYYY-MM", week: "YYYY-Www" };
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+const p2 = (n: number) => String(n).padStart(2, "0");
+
+/** A date or time as the field's value format, from what a person or model writes ("24 December 2026", "10:30 am"); null if it is not one. */
+export function fieldValue(type: string, text: string): string | null {
+  const t = text.trim();
+  const date = (s: string): string | null => {
+    let m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s) || /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/.exec(s);
+    if (m) return `${m[1]}-${p2(+m[2])}-${p2(+m[3])}`;
+    m = /^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/.exec(s);
+    if (m) { const a = +m[1], b = +m[2]; const [d, mo] = a > 12 ? [a, b] : b > 12 ? [b, a] : [b, a]; return `${m[3]}-${p2(mo)}-${p2(d)}`; } // mm/dd unless the first cannot be a month
+    const low = s.toLowerCase().replace(/,/g, " ").replace(/(\d)(st|nd|rd|th)\b/g, "$1");
+    const mi = MONTHS.findIndex(x => new RegExp(`\\b${x}`).test(low));
+    const y = /\b(\d{4})\b/.exec(low)?.[1];
+    const d = /\b(\d{1,2})\b/.exec(low.replace(/\b\d{4}\b/, ""))?.[1];
+    if (mi >= 0 && y && d && +d >= 1 && +d <= 31) return `${y}-${p2(mi + 1)}-${p2(+d)}`;
+    return null;
+  };
+  const time = (s: string): string | null => {
+    const m = /^(\d{1,2})(?::(\d{2}))?(?::\d{2})?\s*(am|pm|a\.m\.|p\.m\.)?$/i.exec(s.trim());
+    if (!m || (!m[2] && !m[3])) return null;
+    let h = +m[1];
+    const ap = (m[3] || "").toLowerCase();
+    if (ap.startsWith("p") && h < 12) h += 12;
+    if (ap.startsWith("a") && h === 12) h = 0;
+    return h < 24 ? `${p2(h)}:${m[2] || "00"}` : null;
+  };
+  switch (type) {
+    case "date": return date(t);
+    case "time": return time(t);
+    case "month": { const m = /^(\d{4})-(\d{1,2})$/.exec(t); if (m) return `${m[1]}-${p2(+m[2])}`; const d = date("1 " + t); return d ? d.slice(0, 7) : null; }
+    case "week": return /^\d{4}-W\d{2}$/.test(t) ? t : null;
+    case "datetime-local": {
+      const m = /^(.+?)[T ](\d{1,2}:\d{2}(?::\d{2})?(?:\s*[ap]\.?m\.?)?)$/i.exec(t) || /^(.+?)\s+at\s+(.+)$/i.exec(t);
+      if (!m) return null;
+      const d = date(m[1].trim()), h = time(m[2]);
+      return d && h ? `${d}T${h}` : null;
+    }
+  }
+  return null;
+}
+
+/** A selector that says where an element is, not what it is (no id, no attribute: tags, classes, nth-of-type). */
+export function positionalCss(css: string): boolean {
+  const last = css.split(" >>> ").pop() || css;
+  return /:nth-(of-type|child)\(/.test(last) || !/[#[]/.test(last);
+}
+
+/** Does a field's value hold the typed text? Formatting a field adds (spaces in a card number, a phone mask) is left aside. */
+export function holdsText(value: string, text: string): boolean {
+  if (value.includes(text)) return true;
+  const bare = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  const t = bare(text);
+  return !!t && bare(value).includes(t);
+}
+
+// An item still reads as it did when most of its recorded words are there (a price may change);
+// another item of the same kind shares the words of the template and falls short.
+const WITHIN_FIT = 0.8;
+
+const wordSet = (s: string) => new Set(s.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []);
+/** The share of the words of `want` that `have` holds (0 to 1). */
+export function wordsFound(want: string, have: string): number {
+  const w = wordSet(want);
+  if (!w.size) return 0;
+  const h = wordSet(have);
+  let n = 0;
+  for (const x of w) if (h.has(x)) n++;
+  return n / w.size;
+}
+
 // Is the page readable? Its content size, and a loading indicator that is
 // on screen: aria-busy, a progress bar, a spinner, or text that only says
 // "Loading…". Read only.
@@ -134,7 +221,7 @@ const READY_PROBE = `function() {
     const w = document.createTreeWalker(b, NodeFilter.SHOW_TEXT);
     for (let n = w.nextNode(), i = 0; n && i < 5000; n = w.nextNode(), i++) {
       const t = n.nodeValue.trim();
-      if (t.length < 40 && /^(loading|please wait|one moment)\\b[^a-z]*$/i.test(t) && n.parentElement && shown(n.parentElement)) { loading = JSON.stringify(t); break; }
+      if (t.length < 40 && /^(loading|please wait|one moment|running|processing|generating|searching|working|calculating|fetching|updating)\\b[^a-z]*$/i.test(t) && n.parentElement && shown(n.parentElement)) { loading = JSON.stringify(t); break; }
     }
   }
   return JSON.stringify({ content: (b.innerText || '').trim().length + document.images.length, loading });
@@ -169,7 +256,11 @@ export class PageSession {
   private sameDocNavs: string[] = [];
   private newTabs: string[] = [];
   private blockedPopups: string[] = [];
+  /** the next read collects every table row (an extract) */
+  private allRows = false;
   private popupChecks = new Set<Promise<unknown>>();
+  /** the tab Ghostwright works in now (shared by the sessions of one Ghostwright as it follows new tabs) */
+  private active: { page: Page } = { page: null as unknown as Page };
   private downloads: string[] = [];
   private errors: string[] = [];
   private dialog: Dialog | null = null;
@@ -182,6 +273,8 @@ export class PageSession {
   private opQueue: Promise<unknown> = Promise.resolve();
   /** refuses clicks and submits that would buy; null = allowed */
   purchaseGuard: ((facts: ControlFacts[]) => string | null) | null = null;
+  /** patterns for the page-side check of forms a script submits during an action (see guard.ts) */
+  submitGuard: { hard: string; exact: string; action: string } | null = null;
   /** origins the page may navigate to; null = any */
   allowedOrigins: string[] | null = null;
   /** file: pages may be opened (off by default) */
@@ -219,7 +312,7 @@ export class PageSession {
     const ctx = this.context;
     await this.installRouter();
     const police = async (p: Page) => {
-      if (p === this.page) return;
+      if (p === this.page || p === this.active.page) return;
       await p.waitForLoadState("domcontentloaded", { timeout: 5000 }).catch(() => undefined);
       if (this.navAllowed(p.url()) || p.url() === "about:blank") this.blockedPopups.push(p.url());
       if (this.navAllowed(p.url()) || p.url() === "about:blank") await p.close().catch(() => undefined);
@@ -255,12 +348,12 @@ export class PageSession {
         if (r.isNavigationRequest() && this.navAllowed(url)) {
           abort = true;
           let main = false;
-          try { main = r.frame() === this.page.mainFrame(); } catch { main = false; } // a popup's first request has no frame yet
+          try { main = r.frame() === this.active.page.mainFrame(); } catch { main = false; } // a popup's first request has no frame yet
           if (main) { this.blockedNav = url; this.blockedWhy = ""; }
           else {
             // a new tab (not a frame of this page) that was refused
             let popup = true;
-            try { popup = r.frame().page() !== this.page; } catch { popup = true; }
+            try { popup = r.frame().page() !== this.active.page; } catch { popup = true; }
             if (popup && this.blockedPopups.length < 5) this.blockedPopups.push(url);
           }
         } else if (this.secretInUrl && this.typedSecrets.size && r.method() === "GET" && r.isNavigationRequest() && this.secretInUrl(url, [...this.typedSecrets])) {
@@ -288,6 +381,29 @@ export class PageSession {
 
   static async attach(page: Page, o: SessionOptions = {}): Promise<PageSession> {
     const s = new PageSession(page, o);
+    s.active.page = page;
+    await s.init();
+    return s;
+  }
+
+  /**
+   * A session for another tab of the same browser that keeps this one's rules and state:
+   * allowed origins, the purchase guard, the secrets typed so far, the request router.
+   */
+  async follow(page: Page, o: SessionOptions = {}): Promise<PageSession> {
+    const s = new PageSession(page, o);
+    s.purchaseGuard = this.purchaseGuard;
+    s.submitGuard = this.submitGuard;
+    s.allowedOrigins = this.allowedOrigins;
+    s.allowFileUrls = this.allowFileUrls;
+    s.secretInUrl = this.secretInUrl;
+    s.typedSecrets = this.typedSecrets;
+    s.blockedPopups = this.blockedPopups;
+    s.popupChecks = this.popupChecks;
+    s.routerOn = this.routerOn;
+    s.active = this.active;
+    s.captured = this.captured;
+    this.active.page = page;
     await s.init();
     return s;
   }
@@ -545,7 +661,8 @@ export class PageSession {
   private async offsetOf(w: World): Promise<[number, number]> {
     if (!w.parent || w.hostLocal === undefined) return [0, 0];
     const [px, py] = await this.offsetOf(w.parent);
-    const r = await this.evalIn(w.parent, `(()=>{const e=__pv.el(${w.hostLocal});if(!e)return null;const r=e.getBoundingClientRect();return [r.left+e.clientLeft,r.top+e.clientTop]})()`);
+    // the host may sit in a same-origin child document of the parent world: add the frames on the way
+    const r = await this.evalIn(w.parent, `(()=>{const e=__pv.el(${w.hostLocal});if(!e)return null;const r=e.getBoundingClientRect();let x=r.left+e.clientLeft,y=r.top+e.clientTop;let v=e.ownerDocument.defaultView;for(let i=0;i<8&&v&&v!==window;i++){let fe=null;try{fe=v.frameElement}catch(_){}if(!fe)break;const q=fe.getBoundingClientRect();x+=q.left+fe.clientLeft;y+=q.top+fe.clientTop;v=fe.ownerDocument.defaultView}return [x,y]})()`);
     const v = r.value as [number, number] | null;
     return v ? [px + v[0], py + v[1]] : [px, py];
   }
@@ -566,7 +683,7 @@ export class PageSession {
   // ---- snapshot --------------------------------------------------------------
 
   private async collect(w: World, expandLocal: number): Promise<RawSnapshot> {
-    const opts = JSON.stringify({ expand: expandLocal, cap: captchaPatterns() });
+    const opts = JSON.stringify({ expand: expandLocal, cap: captchaPatterns(), allRows: this.allRows });
     const r = await this.evalIn(w, `__pv.collect(${opts})`);
     return JSON.parse(r.value as string) as RawSnapshot;
   }
@@ -651,9 +768,25 @@ export class PageSession {
         const d: any = await this.call(this.cdp, "DOM.describeNode", { objectId });
         const backend = d?.node?.backendNodeId;
         if (!backend) continue;
-        const q: any = await this.call(this.cdp, "Accessibility.queryAXTree", { backendNodeId: backend });
+        // the DOM domain sees into closed shadow roots: list the controls there, then ask the accessibility tree what each one is
+        const tree: any = await this.call(this.cdp, "DOM.describeNode", { backendNodeId: backend, depth: -1, pierce: true });
+        const found: number[] = [];
+        const visit = (n: any) => {
+          if (!n || found.length >= 60) return;
+          const tag = String(n.nodeName || "").toLowerCase();
+          const attrs: string[] = n.attributes || [];
+          if (n.backendNodeId !== backend && (/^(a|button|input|select|textarea|summary)$/.test(tag) || attrs.includes("role") || attrs.includes("tabindex") || attrs.includes("onclick"))) found.push(n.backendNodeId);
+          for (const c of [...(n.shadowRoots || []), ...(n.children || [])]) visit(c);
+        };
+        visit(tree?.node);
+        const nodesAX: any[] = [];
+        for (const b of found) {
+          const p: any = await this.call(this.cdp, "Accessibility.getPartialAXTree", { backendNodeId: b, fetchRelatives: false }).catch(() => null);
+          const n = (p?.nodes || []).find((x: any) => x.backendDOMNodeId === b);
+          if (n) nodesAX.push(n);
+        }
         const kids: Element[] = [];
-        for (const n of (q.nodes || []) as any[]) {
+        for (const n of nodesAX) {
           if (n.ignored || !n.backendDOMNodeId || n.backendDOMNodeId === backend) continue;
           const role = String(n.role?.value || "");
           const name = String(n.name?.value || "").replace(/\s+/g, " ").trim().slice(0, 80);
@@ -696,11 +829,11 @@ export class PageSession {
     const { ch, title, url } = await this.checkChallenge();
     if (ch) return challengeView(ch, title, url);
     let sn: Snapshot;
-    try { sn = await this.snapshot(o.expand || 0); } catch (e) {
+    try { this.allRows = !!o.allItems; sn = await this.snapshot(o.expand || 0); } catch (e) {
       if (e instanceof DialogOpen && this.pendingDialog()) return this.dialogView(this.pendingDialog()!);
       if (e instanceof ChallengeError) return challengeView(e.ch, title, url);
       throw e;
-    }
+    } finally { this.allRows = false; }
     this.vol.note(this.last, sn);
     this.last = sn;
     return buildView(sn, o);
@@ -715,6 +848,32 @@ export class PageSession {
    * Waits until the page can be read: the document is parsed, requests and
    * layout went quiet, and the body shows something (text or images).
    */
+  /**
+   * Is the page still at work: a request of the page (XHR or fetch) still in flight, however long it
+   * has taken, or a loading indicator on screen ("Running…", a spinner, aria-busy)? The reason, or null.
+   */
+  async busy(): Promise<string | null> {
+    return this.serial(async () => {
+      const now = Date.now();
+      for (const r of this.net.inflight.values()) if ((r.type === "XHR" || r.type === "Fetch") && now - r.start < 60000) return "a request is still in flight";
+      try {
+        const r = JSON.parse(String((await this.evalIn(await this.ensureMain(), `(${READY_PROBE})()`)).value || "{}"));
+        if (r.loading) return `the page shows ${r.loading}`;
+      } catch { /* cannot read the page: not known to be busy */ }
+      return null;
+    });
+  }
+
+  /** A short fingerprint of what the page shows (its text), to tell whether it changed between two moments. */
+  async pageStamp(): Promise<string> {
+    return this.serial(async () => {
+      try {
+        const v = await this.evalIn(await this.ensureMain(), `(() => { const t = document.body ? document.body.innerText : ''; let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return t.length + ':' + h; })()`);
+        return String(v.value ?? "");
+      } catch { return ""; }
+    });
+  }
+
   waitReady(timeoutMs = 15000): Promise<{ ready: boolean; ms: number; reason?: string }> {
     return this.serial(async () => {
       const t0 = Date.now();
@@ -768,6 +927,7 @@ export class PageSession {
             if (l.text && l.text !== t.name) t.text = l.text;
             if (l.xpath) t.xpath = l.xpath;
             if (l.near) t.near = l.near;
+            if (l.within) t.within = l.within;
           }
         } catch { /* keep what we have */ }
         if (w.key !== "main" && w.url) {
@@ -778,49 +938,97 @@ export class PageSession {
     });
   }
 
+  /**
+   * One CSS selector for an element of the last read, from the top document: the frames it is
+   * in come first, joined with " >>> " ("iframe#pay >>> input[name=card]"). Null when unknown.
+   */
+  async selectorOf(id: number): Promise<string | null> {
+    return this.serial(async () => {
+      const ref = this.rev.get(id);
+      if (!ref || ref.backend) return null;
+      let w = this.worldByKey(ref.world);
+      let local = ref.local;
+      const parts: string[] = [];
+      for (let i = 0; w && i < 8; i++) {
+        try {
+          const l = JSON.parse((await this.evalIn(w, `__gw.loc(${local})`)).value as string);
+          if (!l?.css) return null;
+          parts.unshift(l.full || l.css);
+        } catch { return null; }
+        if (!w.parent || w.hostLocal === undefined) break;
+        local = w.hostLocal;
+        w = w.parent;
+      }
+      return parts.join(" >>> ");
+    });
+  }
+
   /** Finds the element a locator chain points to, reading the page first. Null when nothing matches. */
   async resolve(t: Target): Promise<{ id: number; by: string } | null> {
     return this.serial(async () => {
       const sn = await this.snapshot(0);
       this.vol.note(this.last, sn);
       this.last = sn;
-      const score = new Map<number, number>();
+      // What names the element decides: its role and name, its text, a selector by id or attribute.
+      // The text of its own item (within) and the heading before it (near) tell apart elements that
+      // are named alike. Position (an nth-of-type selector, the XPath) only breaks a tie that is left,
+      // and decides alone only for an element that was recorded with nothing else. After a reorder or
+      // a redesign position points at another item: then the step fails and is repaired.
+      const named = new Map<number, number>();
+      const placed = new Map<number, number>();
       const firstBy = new Map<number, string>();
-      const add = (ids: number[], by: string, weight = 1) => {
+      const add = (m: Map<number, number>, ids: number[], by: string, weight: number) => {
         for (const id of new Set(ids)) {
-          score.set(id, (score.get(id) || 0) + weight);
-          if (!firstBy.has(id)) firstBy.set(id, by);
+          m.set(id, (m.get(id) || 0) + weight);
+          if (m === named && !firstBy.has(id)) firstBy.set(id, by);
         }
       };
-      const order: string[] = [];
       let rn: typeof sn.items = [];
       if (t.role && t.name) {
         rn = findAll(sn.items, t.role, t.name);
         if (t.frame) rn = rn.filter(e => this.worldMatchesFrame(e.world || "main", t.frame!));
-        if (rn.length === 1) return { id: rn[0].id, by: "role" };
-        add(rn.map(e => e.id), "role", 2);
-        order.push("role");
+        add(named, rn.map(e => e.id), "role", 2);
       }
+      const positional = !!t.css && positionalCss(t.css);
+      const nameless = !(t.role && t.name) && !t.text && (!t.css || positional);
+      const nearIds = new Set<number>();
+      const around = new Map<number, string>();
       const worlds = [this.main!, ...this.frameWorlds.values()].filter(w => w && (t.frame ? this.worldMatchesFrame(w.key, t.frame) : w.key === "main"));
       for (const w of worlds) {
-        let found: { css: number[]; text: number[]; xpath: number[]; near: number[] };
-        // a target with only role, name and near (a param target: its recorded position is not used) has no
-        // css, text or xpath hits for near to narrow, so near is checked on the role-and-name matches instead
-        const among = t.near && !t.css && !t.text && !t.xpath ? rn.map(e => this.rev.get(e.id)).filter(r => r && r.world === w.key).map(r => r!.local) : undefined;
-        try { found = JSON.parse((await this.evalIn(w, `__gw.find(${JSON.stringify({ css: t.css, text: t.text, xpath: t.xpath, near: t.near, among })})`)).value as string); } catch { continue; }
+        let found: { css: number[]; text: number[]; xpath: number[]; near: number[]; within?: Record<string, string> };
+        const among = rn.map(e => this.rev.get(e.id)).filter(r => r && r.world === w.key).map(r => r!.local);
+        try { found = JSON.parse((await this.evalIn(w, `__gw.find(${JSON.stringify({ css: t.css, text: t.text, xpath: t.xpath, near: t.near, within: t.within, among })})`)).value as string); } catch { continue; }
         const g = (ls: number[]) => ls.map(l => this.gid(w.key, l)).filter(id => sn.byId.has(id));
-        const css = g(found.css), text = g(found.text), xp = g(found.xpath), near = g(found.near);
-        if (!score.size && css.length === 1) return { id: css[0], by: "css" };
-        add(css, "css", 2); add(text, "text"); add(xp, "xpath"); add(near, "near");
+        const css = g(found.css), xp = g(found.xpath);
+        // a text match counts for an element of the recorded role
+        const text = g(found.text).filter(id => !t.role || sn.byId.get(id)?.role === t.role);
+        if (positional) add(placed, css, "css", 1); else add(named, css, "css", 2);
+        add(named, text, "text", 1);
+        add(placed, xp, "xpath", 1);
+        for (const id of g(found.near)) nearIds.add(id);
+        for (const [l, txt] of Object.entries(found.within || {})) around.set(this.gid(w.key, Number(l)), txt);
       }
-      if (!score.size) return null;
-      let best = -1, bestScore = 0, tie = false;
-      for (const e of sn.items) {
-        const s = score.get(e.id) || 0;
-        if (s > bestScore) { best = e.id; bestScore = s; tie = false; } else if (s === bestScore && s > 0) tie = true;
+      let cands = sn.items.map(e => e.id).filter(id => named.has(id) || (nameless && placed.has(id)));
+      if (!cands.length) return null;
+      if (t.within) {
+        // its own item must still read as it did (most of the recorded words are there)
+        const fit = new Map(cands.map(id => [id, wordsFound(t.within!, around.get(id) || "")] as const));
+        const top = Math.max(...fit.values());
+        if (top < WITHIN_FIT) return null;
+        cands = cands.filter(id => fit.get(id)! >= top - 1e-9);
       }
-      if (best < 0 || (tie && bestScore < 3)) return null;
-      return { id: best, by: firstBy.get(best) || "css" };
+      if (cands.length > 1 && t.near) {
+        const n = cands.filter(id => nearIds.has(id));
+        if (n.length) cands = n;
+      }
+      let best = -1, bestN = -1, bestP = -1, tie = false;
+      for (const id of cands) {
+        const n = named.get(id) || 0, p = placed.get(id) || 0;
+        if (n > bestN || (n === bestN && p > bestP)) { best = id; bestN = n; bestP = p; tie = false; }
+        else if (n === bestN && p === bestP) tie = true;
+      }
+      if (best < 0 || tie) return null;
+      return { id: best, by: firstBy.get(best) || "position" };
     });
   }
 
@@ -830,7 +1038,7 @@ export class PageSession {
   }
 
   /** Reads `fields` under `css` in the main document (a recipe's DOM extract). */
-  async domExtract(spec: { css?: string | null; fields?: Record<string, string>; limit?: number }): Promise<unknown> {
+  async domExtract(spec: { css?: string | null; fields?: Record<string, string>; limit?: number; headers?: Record<string, string>; wantHeaders?: boolean; nested?: Record<string, { css: string; fields: Record<string, string> }> }): Promise<unknown> {
     return JSON.parse(await this.evalMain(`__gw.dom(${JSON.stringify(spec)})`));
   }
 
@@ -841,6 +1049,16 @@ export class PageSession {
 
   async pageJson(): Promise<{ sel: string; json: unknown }[]> {
     return JSON.parse(await this.evalMain("__gw.pageJson()"));
+  }
+
+  /** A list inside each row of a list (see locate.js nest). */
+  async nest(css: string, inner: Record<string, string[]>[][], keys: string[]): Promise<{ css: string; fields: Record<string, string>; texts: Record<string, string> } | null> {
+    return JSON.parse(await this.evalMain(`__gw.nest(${JSON.stringify(css)}, ${JSON.stringify(inner)}, ${JSON.stringify(keys)})`));
+  }
+
+  /** Where values that are a part of an element's text sit (see locate.js holders). */
+  async holders(rows: Record<string, string[]>[], keys: string[]): Promise<{ css: string | null; fields: Record<string, string>; texts: Record<string, string> } | null> {
+    return JSON.parse(await this.evalMain(`__gw.holders(${JSON.stringify(rows)}, ${JSON.stringify(keys)})`));
   }
 
   async compileCss(rows: unknown, keys: string[]): Promise<{ css: string | null; fields: Record<string, string> } | null> {
@@ -867,6 +1085,7 @@ export class PageSession {
     if (!KNOWN.has(a.action)) return finish(failf(`unknown action "${a.action}"`));
 
     let pre = this.last;
+    let armed: World[] = [];
     let startEpoch = this.epoch, startURL = this.url;
     let start = Date.now();
 
@@ -904,7 +1123,17 @@ export class PageSession {
         }
         if (NEEDS_TARGET.has(a.action) && !a.id && !(a.action === "click" && a.x != null && a.y != null)) return finish(failf(`${a.action} needs an element id`));
         if (a.id && !this.rev.has(a.id)) return finish(failf("unknown id"));
+        if (a.id) { res.id = a.id; res.control = !!pre.byId.get(a.id)?.interactive; }
         await this.evalIn(this.main!, "__pv.mark()").catch(() => undefined);
+        const tw = a.id ? this.ref(a.id)?.w : undefined;
+        if (tw && tw !== this.main) await this.evalIn(tw, "__pv.mark()").catch(() => undefined);
+        // a purchase form that a script submits while this action runs is stopped in the page
+        if (this.submitGuard && ["click", "press", "type", "check", "uncheck", "select"].includes(a.action)) {
+          const arm = `__gw.arm(${JSON.stringify(this.submitGuard)})`;
+          await this.evalIn(this.main!, arm).catch(() => undefined);
+          if (tw && tw !== this.main) await this.evalIn(tw, arm).catch(() => undefined);
+          armed = [this.main!, ...(tw && tw !== this.main ? [tw] : [])];
+        }
       }
       startEpoch = this.epoch; startURL = this.url;
       this.resetActionLog();
@@ -946,6 +1175,11 @@ export class PageSession {
       return finish(guardf(`the page went to ${left} (${leftFor}); went back`));
     }
     this.fillSideEffects(res, st);
+    for (const w of this.pendingDialog() ? [] : armed) {
+      let why = "";
+      try { why = String((await this.evalIn(w, "__gw.tripped()")).value || ""); } catch { /* the document is gone: nothing was stopped there */ }
+      if (why) return finish(guardf(`purchase_blocked: the page tried to submit an order or payment form ("${why}") when this was done; the submission was stopped. Report what the page shows instead (allowPurchases: true allows it)`));
+    }
     // a new tab the origin rule refused: said plainly, not an ok
     if (this.blockedPopups.length) {
       const u = this.blockedPopups.find(x => x !== "about:blank") ?? "about:blank";
@@ -971,6 +1205,11 @@ export class PageSession {
       if (f) return finish(res.dialog ? null : f);
       throw e;
     }
+    if (startEpoch === this.epoch) {
+      const count = async (w?: World | null) => { try { return w ? Number(((await this.evalIn(w, "__pv.q()")).value as number[])[1]) || 0 : 0; } catch { return 0; } };
+      const tw = a.id ? this.ref(a.id)?.w : undefined;
+      res.mutations = (await count(this.main)) + (tw && tw !== this.main ? await count(tw) : 0);
+    }
     await this.evalIn(this.main!, "__pv.idle()").catch(() => undefined);
     this.last = post;
     const newDoc = post.epoch !== startEpoch || !pre || pre.epoch !== post.epoch;
@@ -979,6 +1218,8 @@ export class PageSession {
       res.view = buildView(post, {});
       res.freshReason = "new page";
     } else if (a.action === "scroll") {
+      // a scroll of the page that moved nothing (it cannot scroll, or is already there) did nothing
+      if (!a.id && pre && post.sx === pre.sx && post.sy === pre.sy) return finish(failf("no effect: the page did not scroll (it is already there, or has nothing more to scroll)"));
       res.view = buildView(post, {});
       res.freshReason = "scrolled";
     } else {
@@ -1008,7 +1249,7 @@ export class PageSession {
 
   private resetActionLog(): void {
     this.net.reset();
-    this.sameDocNavs = []; this.newTabs = []; this.downloads = []; this.errors = []; this.blockedPopups = [];
+    this.sameDocNavs = []; this.newTabs = []; this.downloads = []; this.errors = []; this.blockedPopups.length = 0;
   }
 
   private fillSideEffects(res: ActResult, st: SettleInfo): void {
@@ -1164,9 +1405,15 @@ export class PageSession {
     const r = this.ref(id);
     if (!r) return { ok: false, by: "nothing (element gone)" };
     if (r.w.key !== "main") {
-      // the frame itself must be reachable in its parent, then the element inside it
-      const parentHit = await this.hitWorld(r.w.parent!, r.w.hostLocal!, x, y);
-      if (!parentHit.ok) return parentHit;
+      // every frame on the way must be reachable in its parent (in that parent's own
+      // coordinates), then the element inside the innermost one
+      const chain: World[] = [];
+      for (let w: World | undefined = r.w; w && w.key !== "main" && chain.length < 8; w = w.parent) chain.unshift(w);
+      for (const w of chain) {
+        const [px, py] = await this.offsetOf(w.parent!);
+        const up = await this.hitWorld(w.parent!, w.hostLocal!, x - px, y - py);
+        if (!up.ok) return up;
+      }
       const [ox, oy] = await this.offsetOf(r.w);
       return this.hitWorld(r.w, r.local, x - ox, y - oy);
     }
@@ -1198,7 +1445,9 @@ export class PageSession {
       }
     }
     const r: any = await this.callD(w.cdp, "Runtime.callFunctionOn", {
-      functionDeclaration: `function(h,x,y){return __pv.hit(${local},h,x,y)}`, executionContextId: w.ctx,
+      // a point inside a same-process child frame comes back as a node of that frame's document: climb to the
+      // target's own document (its frame element there)
+      functionDeclaration: `function(h,x,y){try{const t=__pv.el(${local});const td=(t&&t.ownerDocument)||document;let hx=x,hy=y;for(let i=0;i<4&&h&&(h.tagName==='IFRAME'||h.tagName==='FRAME')&&h.ownerDocument!==td;i++){let d=null;try{d=h.contentDocument}catch(e){}if(!d)break;const r=h.getBoundingClientRect();hx-=r.left+h.clientLeft;hy-=r.top+h.clientTop;h=d.elementFromPoint(hx,hy)}while(h&&h.ownerDocument&&h.ownerDocument!==td){const fe=h.ownerDocument.defaultView&&h.ownerDocument.defaultView.frameElement;if(!fe)break;h=fe}}catch(e){}return __pv.hit(${local},h,x,y)}`, executionContextId: w.ctx,
       arguments: [arg, { value: x }, { value: y }], returnByValue: true, silent: true,
     });
     const v = JSON.parse(r.result.value as string);
@@ -1443,9 +1692,23 @@ export class PageSession {
         if (p.tag === "SELECT" || (p.tag === "INPUT" && /^(checkbox|radio|file|button|submit)$/.test(p.type))) return failf(`element [${a.id}] is not a text field`);
         const segmented = p.tag === "INPUT" && /^(date|time|datetime-local|month|week)$/.test(p.type);
         if (segmented) {
+          // a date or time field is typed segment by segment in the browser's locale order, so keys
+          // garble it: its value is set in the field's own format (as filling it in does), with input
+          // and change events, after focusing it
           const o = await this.objectOf(a.id!, "el");
-          await this.call(o!.w.cdp, "DOM.scrollIntoViewIfNeeded", { objectId: o!.objectId }).catch(() => undefined);
-          try { await this.call(o!.w.cdp, "DOM.focus", { objectId: o!.objectId }); } catch (e) { return failf("could not focus the field: " + (e as Error).message); }
+          if (!o?.objectId) return failf("element gone");
+          const v = fieldValue(p.type, a.text || "");
+          if (v == null) return failf(`"${cut(a.text || "", 40)}" is not a ${p.type} (write it as ${SEGMENT_FORMAT[p.type]})`);
+          await this.call(o.w.cdp, "DOM.scrollIntoViewIfNeeded", { objectId: o.objectId }).catch(() => undefined);
+          try { await this.call(o.w.cdp, "DOM.focus", { objectId: o.objectId }); } catch (e) { return failf("could not focus the field: " + (e as Error).message); }
+          const x: any = await this.callD(o.w.cdp, "Runtime.callFunctionOn", {
+            objectId: o.objectId, returnByValue: true, silent: true, arguments: [{ value: v }],
+            functionDeclaration: "function(v){const d=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');d.set.call(this,v);this.dispatchEvent(new Event('input',{bubbles:true}));this.dispatchEvent(new Event('change',{bubbles:true}));return this.value}",
+          });
+          if (x?.result?.value !== v) return failf(`the field did not take ${v}`);
+          res.typed = true;
+          if (a.submit) await this.keyEvent(NAMED_KEYS.enter);
+          return null;
         } else if (!p.focused) {
           const cf = await this.clickElement(a.id!, pre, false, 1, 0);
           if (cf) return cf;
@@ -1469,6 +1732,18 @@ export class PageSession {
           } else await this.keyEvent({ key: "End", code: "End", vk: 35 }, 0, ["moveToEndOfDocument"]);
         }
         await this.typeText(a.text || "");
+        // read the field back: what counts is that it holds the text, not that the keys were sent
+        if (a.text) {
+          try {
+            const o = await this.objectOf(a.id!, "el");
+            const x: any = o?.objectId ? await this.callD(o.w.cdp, "Runtime.callFunctionOn", {
+              objectId: o.objectId, returnByValue: true, silent: true,
+              functionDeclaration: "function(){return typeof this.value==='string'?this.value:(this.isContentEditable?this.innerText:null)}",
+            }) : null;
+            const v = x?.result?.value;
+            if (typeof v === "string") res.typed = holdsText(v, a.text);
+          } catch { /* the page moved on: judged by what happened next */ }
+        }
         if (a.submit) await this.keyEvent(NAMED_KEYS.enter);
         return null;
       }
@@ -1490,7 +1765,15 @@ export class PageSession {
         return this.clickElement(a.id!, pre, false, 1, 0);
       }
       case "scroll": {
-        if (a.id) {
+        // a share of the way: "50%", "top", "bottom"; of the box given by id, else of the page
+        const share = (to: string): number | null => {
+          const t = to.trim().toLowerCase();
+          if (t === "top") return 0;
+          if (t === "bottom" || t === "end") return 1;
+          const m = /^(\d+(?:\.\d+)?)\s*%$/.exec(t);
+          return m ? Math.min(100, Math.max(0, +m[1])) / 100 : null;
+        };
+        if (a.id && !a.to && !a.dy) {
           const t = await this.target(a.id, true, false);
           if (t.f) return t.f;
           const o = await this.objectOf(a.id, "t");
@@ -1499,13 +1782,26 @@ export class PageSession {
           await this.call(o.w.cdp, "DOM.scrollIntoViewIfNeeded", { objectId: o.objectId, centerIfNeeded: true });
           return null;
         }
-        let dy = a.dy || 0;
-        const to = (a.to || "").toLowerCase();
-        if (to === "top") dy = -1e7;
-        else if (to === "bottom") dy = 1e7;
-        else if (to) return failf(`scroll to "${a.to}": use top or bottom`);
-        else if (!dy) return failf("scroll needs dy, to (top|bottom) or an element id");
-        const x = pre?.vw ? pre.vw / 2 : 400, y = pre?.vh ? pre.vh / 2 : 300;
+        const to = a.to ? share(a.to) : null;
+        if (a.to && to == null) return failf(`scroll to "${a.to}": use top, bottom or a share like "50%"`);
+        if (!a.to && !a.dy) return failf("scroll needs dy, to (top, bottom, \"50%\") or an element id");
+        let x = pre?.vw ? pre.vw / 2 : 400, y = pre?.vh ? pre.vh / 2 : 300, dy = a.dy || 0;
+        if (a.id) {
+          // inside a scrolling box: the wheel goes over the box
+          const o = await this.objectOf(a.id, "el");
+          if (!o?.objectId) return failf("element gone");
+          await this.call(o.w.cdp, "DOM.scrollIntoViewIfNeeded", { objectId: o.objectId, centerIfNeeded: true }).catch(() => undefined);
+          const g: any = await this.callD(o.w.cdp, "Runtime.callFunctionOn", { objectId: o.objectId, returnByValue: true, silent: true,
+            functionDeclaration: "function(){let e=this;while(e&&e!==document.documentElement&&!(e.scrollHeight>e.clientHeight+1&&/(auto|scroll)/.test(getComputedStyle(e).overflowY)))e=e.parentElement;const b=e?e.getBoundingClientRect():{left:0,top:0,width:innerWidth,height:innerHeight};return JSON.stringify(e&&e!==document.documentElement?[e.scrollTop,e.scrollHeight-e.clientHeight,b.left+b.width/2,b.top+b.height/2,1]:[scrollY,document.documentElement.scrollHeight-innerHeight,innerWidth/2,innerHeight/2,0])}" });
+          const [top, max, cx, cy] = JSON.parse(g?.result?.value || "[0,0,0,0,0]");
+          const [ox, oy] = await this.offsetOf(o.w);
+          x = ox + cx; y = oy + cy;
+          if (to != null) dy = Math.round(to * max - top);
+        } else if (to != null) {
+          const m = JSON.parse(String((await this.evalIn(await this.ensureMain(), "JSON.stringify([scrollY, document.documentElement.scrollHeight - innerHeight])")).value || "[0,0]"));
+          dy = Math.round(to * m[1] - m[0]);
+        }
+        if (!dy) return null;
         await this.callD(this.cdp, "Input.dispatchMouseEvent", { type: "mouseWheel", x, y, deltaX: 0, deltaY: dy, pointerType: "mouse" });
         return null;
       }
@@ -1684,7 +1980,7 @@ export function describe(a: Action, pre?: Pre): string {
     }
     case "press": return "press " + a.keys;
     case "select": return `select${id} ${quote(cut(a.option || "", 60))}`;
-    case "scroll": return a.id ? "scroll to" + id : a.to ? "scroll to " + a.to : `scroll ${(a.dy || 0) >= 0 ? "+" : ""}${a.dy || 0}`;
+    case "scroll": return a.to ? `scroll${id} to ${a.to}` : a.id && !a.dy ? "scroll to" + id : `scroll${id} ${(a.dy || 0) >= 0 ? "+" : ""}${a.dy || 0}`;
     case "navigate": return "navigate " + bareOrQuote(cut(a.url || "", 120));
     case "wait":
       if (a.for === "text") return "wait for text " + quote(cut(a.text || "", 60));

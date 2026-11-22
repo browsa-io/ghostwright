@@ -1,0 +1,41 @@
+name: release
+# Pushing a tag v<version> publishes that version to npm with provenance and creates the
+# GitHub Release, both from this workflow (so the author is the Actions bot, never a person's
+# account). Needs, once, on npmjs.com: package ghostwright > Settings > Trusted Publisher >
+# GitHub Actions, repository browsa-io/ghostwright, workflow release.yml. No token is stored.
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write   # the GitHub Release
+  id-token: write   # npm trusted publishing and provenance
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: The tag is the package version
+        run: |
+          V=$(node -p "require('./package.json').version")
+          [ "v$V" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME is not package version v$V"; exit 1; }
+          grep -q "^## $V " CHANGELOG.md || { echo "CHANGELOG.md has no section for $V"; exit 1; }
+      - run: npm install -g npm@latest   # trusted publishing needs npm 11.5.1 or newer
+      - run: npm ci
+      - run: npm run build
+      - run: npx vitest run test/unit
+      - run: npm run pack:check
+      - name: Publish to npm (skipped when this version is already there)
+        run: |
+          V=$(node -p "require('./package.json').version")
+          if npm view "ghostwright@$V" version >/dev/null 2>&1; then echo "ghostwright@$V is already on npm"; else npm publish --provenance --access public; fi
+      - name: GitHub Release with this version's changelog section
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(node -p "require('./package.json').version")
+          awk -v v="$V" '$0 ~ "^## " v " " {on=1; next} on && /^## / {exit} on' CHANGELOG.md > notes.md
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "Ghostwright $V" --notes-file notes.md

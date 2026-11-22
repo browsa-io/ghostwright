@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 406" width="880" height="406" role="img" aria-labelledby="t d" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
 <title id="t">First run vs replay: median seconds per run</title>
-<desc id="d">books-category: run 1 11.4 s with 2 model calls, replays 2.5 s with 0 model calls; books-detail: run 1 4.4 s with 2 model calls, replays 3.5 s with 1 model call; quotes-tag: run 1 8.3 s with 2 model calls, replays 2.3 s with 0 model calls; login: run 1 11.5 s with 4 model calls, replays 7.0 s with 1 model call</desc>
+<desc id="d">books-category: run 1 8.0 s with 2 model calls, replays 2.7 s with 0 model calls; books-detail: run 1 5.4 s with 2 model calls, replays 4.1 s with 1 model call; quotes-tag: run 1 11.7 s with 2 model calls, replays 2.8 s with 0 model calls; login: run 1 12.2 s with 4 model calls, replays 5.3 s with 0 model calls</desc>
 <rect width="880" height="406" rx="12" fill="#0d1117"/>
 <text x="24" y="38" font-size="19" font-weight="600" fill="#f0f6fc">First run vs replay</text>
 <text x="24" y="60" font-size="13" fill="#9198a1">Median seconds per run, and model calls per run. Lower is better.</text>
@@ -8,41 +8,35 @@
 <rect x="720" y="27" width="12" height="12" rx="3" fill="#2fae5e"/><text x="738" y="37.5" font-size="13" fill="#9198a1">Runs 2-5: replay</text>
 <line x1="210" y1="84" x2="210" y2="348" stroke="#262c36" stroke-width="1"/>
 <text x="210" y="366" font-size="12" text-anchor="middle" fill="#6e7681">0 s</text>
-<line x1="290" y1="84" x2="290" y2="348" stroke="#262c36" stroke-width="1"/>
-<text x="290" y="366" font-size="12" text-anchor="middle" fill="#6e7681">2 s</text>
 <line x1="370" y1="84" x2="370" y2="348" stroke="#262c36" stroke-width="1"/>
-<text x="370" y="366" font-size="12" text-anchor="middle" fill="#6e7681">4 s</text>
-<line x1="450" y1="84" x2="450" y2="348" stroke="#262c36" stroke-width="1"/>
-<text x="450" y="366" font-size="12" text-anchor="middle" fill="#6e7681">6 s</text>
+<text x="370" y="366" font-size="12" text-anchor="middle" fill="#6e7681">5 s</text>
 <line x1="530" y1="84" x2="530" y2="348" stroke="#262c36" stroke-width="1"/>
-<text x="530" y="366" font-size="12" text-anchor="middle" fill="#6e7681">8 s</text>
-<line x1="610" y1="84" x2="610" y2="348" stroke="#262c36" stroke-width="1"/>
-<text x="610" y="366" font-size="12" text-anchor="middle" fill="#6e7681">10 s</text>
+<text x="530" y="366" font-size="12" text-anchor="middle" fill="#6e7681">10 s</text>
 <line x1="690" y1="84" x2="690" y2="348" stroke="#262c36" stroke-width="1"/>
-<text x="690" y="366" font-size="12" text-anchor="middle" fill="#6e7681">12 s</text>
+<text x="690" y="366" font-size="12" text-anchor="middle" fill="#6e7681">15 s</text>
 <text x="194" y="115" font-size="14" font-weight="600" text-anchor="end" fill="#f0f6fc">books-category</text>
 <text x="194" y="133" font-size="12" text-anchor="end" fill="#6e7681">books.toscrape.com</text>
-<path d="M210 100H662.6800000000001Q666.6800000000001 100 666.6800000000001 104V112Q666.6800000000001 116 662.6800000000001 116H210Z" fill="#6a87dc"/>
-<path d="M210 118H307.26Q311.26 118 311.26 122V130Q311.26 134 307.26 134H210Z" fill="#2fae5e"/>
-<text x="674.6800000000001" y="112.5" font-size="12.5" fill="#9198a1"><tspan font-weight="600" fill="#f0f6fc">11.4 s</tspan>  2 model calls</text>
-<text x="319.26" y="130.5" font-size="12.5" fill="#9198a1"><tspan font-weight="600" fill="#f0f6fc">2.5 s</tspan>  0 model calls</text>
+<path d="M210 100H462.8Q466.8 100 466.8 104V112Q466.8 116 462.8 116H210Z" fill="#6a87dc"/>
+<path d="M210 118H293.424Q297.424 118 297.424 122V130Q297.424 134 293.424 134H210Z" fill="#2fae5e"/>
+<text x="474.8" y="112.5" font-size="12.5" fill="#9198a1"><tspan font-weight="600" fill="#f0f6fc">8.0 s</tspan>  2 model calls</text>
+<text x="305.424" y="130.5" font-size="12.5" fill="#9198a1"><tspan font-weight="600" fill="#f0f6fc">2.7 s</tspan>  0 model calls</text>
 <text x="194" y="179" font-size="14" font-weight="600" text-anchor="end" fill="#f0f6fc">books-detail</text>
 <text x="194" y="197" font-size="12" text-anchor="end" fill="#6e7681">books.toscrape.com</text>
-<path d="M210 164H380.48Q384.48 164 384.48 168V176Q384.48 180 380.48 180H210Z" fill="#6a87dc"/>
-<path d="M210 182H346.3Q350.3 182 350.3 186V194Q350.3 198 346.3 198H210Z" fill="#2fae5e"/>
-<text x="392.48" y="176.5" font-size="12.5" fill="#9198a1"><tspan font-weight="600" fill="#f0f6fc">4.4 s</tspan>  2 model calls</text>
-<text x="358.3" y="194.5" font-size="12.5" fill="#9198a1"><tspan font-weight="600" fill="#f0f6fc">3.5 s</tspan>  1 model call</text>
+<path d="M210 164H378.896Q382.896 164 382.896 168V176Q382.896 180 378.896 180H210Z" fill="#6a87dc"/>
+<path d="M210 182H337.328Q341.328 182 341.328 186V194Q341.328 198 337.328 198H210Z" fill="#2fae5e"/>
+<text x="390.896" y="176.5" font-size="12.5" fill="#9198a1"><tspan font-weight="600" fill="#f0f6fc">5.4 s</tspan>  2 model calls</text>
+<text x="349.328" y="194.5" font-size="12.5" fill="#9198a1"><tspan font-weight="600" fill="#f0f6fc">4.1 s</tspan>  1 model call</text>
 <text x="194" y="243" font-size="14" font-weight="600" text-anchor="end" fill="#f0f6fc">quotes-tag</text>
 <text x="194" y="261" font-size="12" text-anchor="end" fill="#6e7681">quotes.toscrape.com</text>
-<path d="M210 228H538.04Q542.04 228 542.04 232V240Q542.04 244 538.04 244H210Z" fill="#6a87dc"/>
-<path d="M210 246H296.8Q300.8 246 300.8 250V258Q300.8 262 296.8 262H210Z" fill="#2fae5e"/>
-<text x="550.04" y="240.5" font-size="12.5" fill="#9198a1"><tspan font-weight="600" fill="#f0f6fc">8.3 s</tspan>  2 model calls</text>
-<text x="308.8" y="258.5" font-size="12.5" fill="#9198a1"><tspan font-weight="600" fill="#f0f6fc">2.3 s</tspan>  0 model calls</text>
+<path d="M210 228H580.496Q584.496 228 584.496 232V240Q584.496 244 580.496 244H210Z" fill="#6a87dc"/>
+<path d="M210 246H296.352Q300.352 246 300.352 250V258Q300.352 262 296.352 262H210Z" fill="#2fae5e"/>
+<text x="592.496" y="240.5" font-size="12.5" fill="#9198a1"><tspan font-weight="600" fill="#f0f6fc">11.7 s</tspan>  2 model calls</text>
+<text x="308.352" y="258.5" font-size="12.5" fill="#9198a1"><tspan font-weight="600" fill="#f0f6fc">2.8 s</tspan>  0 model calls</text>
 <text x="194" y="307" font-size="14" font-weight="600" text-anchor="end" fill="#f0f6fc">login</text>
 <text x="194" y="325" font-size="12" text-anchor="end" fill="#6e7681">the-internet.herokuapp.com</text>
-<path d="M210 292H664.28Q668.28 292 668.28 296V304Q668.28 308 664.28 308H210Z" fill="#6a87dc"/>
-<path d="M210 310H484.65999999999997Q488.65999999999997 310 488.65999999999997 314V322Q488.65999999999997 326 484.65999999999997 326H210Z" fill="#2fae5e"/>
-<text x="676.28" y="304.5" font-size="12.5" fill="#9198a1"><tspan font-weight="600" fill="#f0f6fc">11.5 s</tspan>  4 model calls</text>
-<text x="496.65999999999997" y="322.5" font-size="12.5" fill="#9198a1"><tspan font-weight="600" fill="#f0f6fc">7.0 s</tspan>  1 model call</text>
-<text x="24" y="390" font-size="11.5" fill="#6e7681">google/gemini-3.1-flash-lite · 3 trials · 2026-11-19 · local Chrome, public sites · bench/first-vs-replay.mts</text>
+<path d="M210 292H597.36Q601.36 292 601.36 296V304Q601.36 308 597.36 308H210Z" fill="#6a87dc"/>
+<path d="M210 310H377.104Q381.104 310 381.104 314V322Q381.104 326 377.104 326H210Z" fill="#2fae5e"/>
+<text x="609.36" y="304.5" font-size="12.5" fill="#9198a1"><tspan font-weight="600" fill="#f0f6fc">12.2 s</tspan>  4 model calls</text>
+<text x="389.104" y="322.5" font-size="12.5" fill="#9198a1"><tspan font-weight="600" fill="#f0f6fc">5.3 s</tspan>  0 model calls</text>
+<text x="24" y="390" font-size="11.5" fill="#6e7681">google/gemini-3.1-flash-lite · 3 trials · 2026-11-21 · local Chrome, public sites · bench/first-vs-replay.mts</text>
 </svg>

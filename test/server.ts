@@ -35,6 +35,11 @@ export async function startFixtures(): Promise<Fixtures> {
       res.end(JSON.stringify({ data: { items, total: items.length } }));
       return;
     }
+    if (u.pathname === "/api/slow") {
+      // a report that takes 3 s, longer than an act waits for a request
+      setTimeout(() => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ rows: ["Genoa North", "Lyon Est", "Porto Sul"] })); }, 3000);
+      return;
+    }
     if (u.pathname === "/api/login") {
       let body = "";
       req.on("data", (c: Buffer) => (body += c));

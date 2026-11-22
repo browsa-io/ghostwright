@@ -27,7 +27,7 @@
   const SKIP = set('SCRIPT STYLE NOSCRIPT TEMPLATE HEAD META LINK TITLE BASE DATALIST OPTGROUP OPTION WBR SOURCE TRACK PARAM MAP COL COLGROUP');
   const INTERACTIVE = set('link button checkbox radio switch textbox searchbox combobox listbox slider spinbutton tab menuitem menuitemcheckbox menuitemradio option treeitem file color clickable video audio');
   const FROM_CONTENT = set('link button checkbox radio switch tab menuitem menuitemcheckbox menuitemradio option treeitem heading clickable');
-  const CONTAINER = set('navigation main banner contentinfo complementary search form region dialog alertdialog group radiogroup toolbar tablist menu menubar tree article feed tabpanel listbox');
+  const CONTAINER = set('navigation main banner contentinfo complementary search form region dialog alertdialog group radiogroup toolbar tablist menu menubar tree article feed tabpanel listbox scrollbox');
   const NEEDS_NAME = set('region group tabpanel');
   const LISTKIND = set('list listbox menu tree feed');
   const ITEMROLE = set('listitem option menuitem menuitemcheckbox menuitemradio treeitem article');
@@ -459,6 +459,31 @@
     const view = [0, 0, vw, vh];
     const items = [], fresh = [], frames = [];
     const emitted = new Set(), recOf = new Map(), bgCache = new Map(), canvasCache = new Map();
+    const labeled = new WeakSet(); // elements whose aria-label stood in for symbols (★★★★★)
+    // elements a :hover rule opens something inside or next to (a menu that shows on hover)
+    let hoverBases = null;
+    const hoverable = (el) => {
+      if (!hoverBases) {
+        hoverBases = [];
+        const visit = (rules) => {
+          for (const r of rules) {
+            if (!r.selectorText) { if (r.cssRules) { try { visit(r.cssRules); } catch (e) {} } continue; }
+            if (r.selectorText.indexOf(':hover') < 0) continue;
+            const st = r.style;
+            if (!(st.display || st.visibility || st.opacity || st.maxHeight || st.height || st.transform)) continue;
+            for (const part of r.selectorText.split(',')) {
+              const i = part.indexOf(':hover');
+              if (i <= 0 || !part.slice(i + 6).trim()) continue;
+              const base = part.slice(0, i).trim();
+              if (base && hoverBases.length < 200) hoverBases.push(base);
+            }
+          }
+        };
+        for (const sh of Array.from(document.styleSheets)) { try { visit(sh.cssRules); } catch (e) {} }
+      }
+      for (const b of hoverBases) { try { if (el.matches(b)) return true; } catch (e) {} }
+      return false;
+    };
     const modal = findModal();
     const active = deepActive();
     const capPats = o.cap || [];
@@ -616,8 +641,15 @@
         if (b[3] > rb[3]) rb[3] = b[3];
         if (p === 1) run.v = 1;
       }
-      run.parts.push(v);
-      if (!c.named && /[\p{L}\p{N}]/u.test(v)) run.free++;
+      let w = v;
+      // symbols only (★★★★★, ●●●○○): what the element says it means is its aria-label
+      if (!c.named && !/[\p{L}\p{N}]/u.test(v)) {
+        const pe = node.parentElement;
+        const lab = pe && !labeled.has(pe) && pe.getAttribute('aria-label');
+        if (lab && /[\p{L}\p{N}]/u.test(lab)) { labeled.add(pe); w = ' ' + lab + ' ' + v.trim() + ' '; }
+      }
+      run.parts.push(w);
+      if (!c.named && /[\p{L}\p{N}]/u.test(w)) run.free++;
     };
 
     const kids = (el, c) => {
@@ -724,14 +756,18 @@
 
       // clipping for descendants
       const root = el === c.doc.documentElement || el === c.doc.body;
+      let scrollBox = false;
       if (!root && hasBox && !r.synth && (cs.overflowX !== 'visible' || cs.overflowY !== 'visible')) {
         const scrollable = (/(auto|scroll)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 1) || (/(auto|scroll)/.test(cs.overflowX) && el.scrollWidth > el.clientWidth + 1);
         if (scrollable) cc.sc = isect(sc, b); else cc.hc = isect(hc, b);
+        // a box that scrolls on its own (a log, a chat): listed, so it can be scrolled by id
+        scrollBox = scrollable && /(auto|scroll)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 40 && r.height >= 60;
       } else if (!root && !hasBox && cs.overflowX !== 'visible' && cs.overflowY !== 'visible' && disp !== 'contents' && !disp.startsWith('inline')) {
         cc.hc = [0, 0, 0, 0]; // a collapsed box that clips: nothing inside is painted
       }
       if (pos !== 'static' || cs.transform !== 'none') { cc.ahc = cc.hc; cc.asc = cc.sc; }
       if (cs.transform !== 'none') { cc.fhc = cc.hc; cc.fsc = cc.sc; }
+      if (scrollBox && !role) role = 'scrollbox';
 
       const isBlock = !(disp.startsWith('inline') || disp === 'contents');
       if (isBlock) { flush(c.blk); cc.blk = { el, run: null, n: 0 }; }
@@ -859,7 +895,7 @@
         let clickable = false;
         if (!interactive && !c.inter && tag !== 'LABEL' && tag !== 'BODY' && tag !== 'HTML' && perceivable) {
           const ti = attr(el, 'tabindex');
-          if (el.hasAttribute('onclick') || (ti !== null && +ti >= 0) || (cs.cursor === 'pointer' && c.cur !== 'pointer')) {
+          if (el.hasAttribute('onclick') || (ti !== null && +ti >= 0) || (cs.cursor === 'pointer' && c.cur !== 'pointer') || hoverable(el)) {
             if (r.width * r.height < 0.7 * vw * vh) clickable = true;
           }
         }

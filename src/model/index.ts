@@ -236,6 +236,26 @@ export function isTransient(e: unknown): boolean {
 }
 
 /**
+ * How long to wait before the one retry: what the provider asks for (a Retry-After header in
+ * seconds or as a date, or retry-after-ms), at most 20 s; 0.8 s when it says nothing.
+ */
+export function retryDelay(e: unknown, now = Date.now()): number {
+  const x = e as any;
+  const h = x?.responseHeaders ?? x?.cause?.responseHeaders ?? x?.response?.headers ?? {};
+  const get = (k: string) => (typeof h.get === "function" ? h.get(k) : h[k] ?? h[k.toLowerCase()]);
+  const ms = Number(get("retry-after-ms"));
+  if (Number.isFinite(ms) && ms > 0) return Math.min(20000, ms);
+  const ra = get("retry-after");
+  if (ra != null && ra !== "") {
+    const s = Number(ra);
+    if (Number.isFinite(s) && s >= 0) return Math.min(20000, Math.max(200, s * 1000));
+    const at = Date.parse(String(ra));
+    if (Number.isFinite(at)) return Math.min(20000, Math.max(200, at - now));
+  }
+  return 800;
+}
+
+/**
  * A provider error as a ModelError with a code and what to fix (the env
  * variable of the key). A time-out or an abort is passed on as it is.
  */
@@ -292,10 +312,12 @@ export interface ResolveOptions {
 export async function resolveModel(spec: ModelSpec, o: ResolveOptions = {}): Promise<ModelClient> {
   const c = await clientFor(spec, o);
   if (c.price) { c.priceSource = "given"; return c; }
-  const fromTable = priceFor(c.id);
+  // an OpenAI-compatible endpoint (a gateway, a proxy) serving a listed model by its usual id is priced as that model
+  const id = c.id.startsWith("compatible/") && /^[a-z0-9-]+\/[^/]+/i.test(c.id.slice(11)) ? c.id.slice(11) : c.id;
+  const fromTable = priceFor(id);
   if (fromTable) { c.price = fromTable; c.priceSource = "table"; return c; }
-  const listed = /^(openai|anthropic|google|deepseek|openrouter)\//.test(c.id);
-  const live = listed && o.livePrices !== false ? await livePrice(c.id, o.cacheDir, o.fetch) : undefined;
+  const listed = /^(openai|anthropic|google|deepseek|openrouter|meta-llama|mistralai|qwen|x-ai|moonshotai|z-ai)\//.test(id);
+  const live = listed && o.livePrices !== false ? await livePrice(id, o.cacheDir, o.fetch) : undefined;
   if (live) { c.price = live; c.priceSource = "live"; return c; }
   c.priceSource = "unknown";
   return c;
@@ -326,6 +348,10 @@ async function clientFor(spec: ModelSpec, o: ResolveOptions): Promise<ModelClien
   const [provider, ...rest] = spec.split("/");
   const name = rest.join("/");
   const key = keyFor(provider, o.apiKey);
+  // said before anything is started (a browser, a request), and said once
+  if (!key && KEY_ENV[provider]) {
+    throw new ModelError("model_key_missing", `No API key for ${spec}: set ${KEY_ENV[provider].join(" or ")} in the environment, or pass modelApiKey to Ghostwright.create(). Nothing was started.`, spec);
+  }
   switch (provider) {
     case "openai": {
       const { createOpenAI } = await import("@ai-sdk/openai");

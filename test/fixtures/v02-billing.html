@@ -1,0 +1,16 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Billing – Fixture</title></head>
+<body style="font-family:sans-serif;margin:20px">
+<h1>Billing</h1>
+<p id="status">Nothing done</p>
+<p>Your card ending 4242 is on file.</p>
+<button onclick="done('PAID-CONFIRM')">Confirm</button>
+<button onclick="done('PAID-RENEW')">Renew</button>
+<button onclick="done('BACK')">Back to settings</button>
+<button onclick="done('INVOICE')">Download invoice</button>
+<form id="card" onsubmit="event.preventDefault();done('PAID-CARD')">
+  <label>Card number <input autocomplete="cc-number" id="cc"></label>
+  <button type="submit">Continue</button>
+</form>
+<script>function done(s){ document.getElementById('status').textContent = s; }</script>
+</body></html>

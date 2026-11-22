@@ -1,0 +1,22 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Nothing to pay – Fixture</title></head>
+<body style="font-family:sans-serif;margin:20px">
+<h1>Garden letters</h1>
+<p id="status">Nothing done</p>
+<form id="news" onsubmit="event.preventDefault();done('SUBSCRIBED')">
+  <label>Email <input type="email" id="email"></label>
+  <button type="submit">Subscribe</button>
+</form>
+<h2>Your appointment</h2>
+<p>Monday 14 December, 10:30</p>
+<button onclick="done('CONFIRMED')">Confirm</button>
+<button onclick="done('BOOKED')">Book now</button>
+<button onclick="done('RESERVED')">Reserve</button>
+<h2>Account</h2>
+<button onclick="done('UPGRADED')">Upgrade</button>
+<button onclick="done('TRIAL')">Start free trial</button>
+<button onclick="done('SAVED')">Save</button>
+<button onclick="done('CONTINUED')">Continue</button>
+<button onclick="done('SUBMITTED')">Submit</button>
+<script>function done(s){ document.getElementById('status').textContent = s; }</script>
+</body></html>

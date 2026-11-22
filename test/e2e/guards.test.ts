@@ -205,8 +205,24 @@ describe("check, last, waitForReady, tabs", () => {
       expect(r.result).toMatch(/new tab →/);
       await new Promise(res => setTimeout(res, 500));
       const tabs = await g.tabs();
+      // the link opened a tab and Ghostwright followed it there, as a person would
+      expect(tabs[0]).toMatchObject({ title: "Your account – Fixture Shop", current: true });
+      expect(tabs.some(t => t.title === "Sizes & prices – Fixture Shop")).toBe(true);
+      expect(g.page.url()).toBe(`${fx.url}/account.html`);
+      expect((await g.observe()).view).toContain("Your account");
+    } finally { await g.close(); }
+  });
+
+  it("followNewTabs: false stays in the first tab", async () => {
+    const g = await open({ store: tempStore(), followNewTabs: false });
+    try {
+      await g.goto(`${fx.url}/regress.html`);
+      const r = await g.do({ action: "click", role: "link", name: "Account in a new tab" });
+      expect(r.result).toMatch(/new tab →/);
+      await new Promise(res => setTimeout(res, 500));
+      const tabs = await g.tabs();
       expect(tabs[0]).toMatchObject({ title: "Sizes & prices – Fixture Shop", current: true });
-      expect(tabs.some(t => t.title === "Your account – Fixture Shop")).toBe(true);
+      expect(g.page.url()).toBe(`${fx.url}/regress.html`);
     } finally { await g.close(); }
   });
 });

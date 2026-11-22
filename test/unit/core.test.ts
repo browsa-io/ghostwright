@@ -209,7 +209,16 @@ describe("Browsa recipe schema", () => {
   it("vendored schema is Browsa's", () => {
     const mono = new URL("../../../../services/replay/recipe.schema.json", import.meta.url);
     if (!existsSync(mono)) return;
-    expect(readFileSync(new URL("../../schema/recipe-v1.json", import.meta.url), "utf8")).toBe(readFileSync(mono, "utf8"));
+    // the one addition: target.within, which only local replays read (a push leaves it out)
+    const own = readFileSync(new URL("../../schema/recipe-v1.json", import.meta.url), "utf8").split("\n").filter(l => !/^\s*"within":/.test(l)).join("\n");
+    expect(own).toBe(readFileSync(mono, "utf8"));
+  });
+  it("a push leaves out what only local replays read", () => {
+    const r = { recipe_version: 1, name: "x", version: 1, output: { type: "object" }, steps: [{ id: "s1", kind: "click", target: { role: "button", name: "Compare", within: "Model A" } }, { id: "s2", kind: "wait", for: { target: { css: "#a", within: "Row 2" } } }] } as any;
+    const body = BrowsaCloud.toBrowsa(r);
+    expect(JSON.stringify(body)).not.toContain("within");
+    expect(r.steps[0].target.within).toBe("Model A");
+    expect(body.steps[0].target).toEqual({ role: "button", name: "Compare" });
   });
 });
 

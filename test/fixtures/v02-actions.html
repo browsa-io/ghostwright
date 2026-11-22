@@ -1,0 +1,19 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Every action – Fixture</title>
+<style>#tip{display:none} #hov:hover + #tip{display:inline}</style></head>
+<body style="font-family:sans-serif;margin:20px">
+<h1>Every action</h1>
+<p id="status">Nothing done</p>
+<button id="b" onclick="done('CLICKED')" ondblclick="done('DOUBLE')" oncontextmenu="done('RIGHT');return false">Press me</button>
+<label>Note <input type="text" id="note" oninput="done('NOTE ' + this.value)" onkeydown="if(event.key==='Escape')done('ESCAPED')"></label>
+<label>Size <select id="size" onchange="done('SIZE ' + this.value)"><option value="">Choose</option><option value="s">Small</option><option value="l">Large</option></select></label>
+<label><input type="checkbox" id="agree" onchange="done('AGREE ' + this.checked)"> I agree</label>
+<span id="hov" tabindex="0" onmouseenter="done('HOVERED')">Hover target</span><span id="tip"> tip shown</span>
+<label>Attachment <input type="file" id="file" onchange="done('FILE ' + this.files[0].name)"></label>
+<button id="ask" onclick="done(confirm('Delete the draft?') ? 'YES' : 'NO')">Ask me</button>
+<a id="next" href="/v02-free.html">Next page</a>
+<button id="later" onclick="setTimeout(() => done('ARRIVED'), 700)">Slow thing</button>
+<div style="height:1500px"></div>
+<p>Far below</p>
+<script>function done(s){ document.getElementById('status').textContent = s; }</script>
+</body></html>

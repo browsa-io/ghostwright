@@ -16,6 +16,7 @@
 // - Times are wall clock from the first call of the run to its result, in one browser that is already
 //   open (its start is counted in neither column), over the public internet to the sites below.
 // - Cost is what usage() reports: the token counts the provider returned, at the SDK's price table.
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { cpus, homedir, platform, release, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -179,11 +180,15 @@ try {
   await gw.close();
 }
 
+const vcs = (...a: string[]) => { try { return execFileSync("git", ["-C", here, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return null; } };
 const date = new Date().toISOString().slice(0, 10);
 const pkg = JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8"));
 const result = {
   date,
   ghostwright: pkg.version,
+  // the exact code measured: the commit of this checkout (GHOSTWRIGHT_BENCH_COMMIT overrides), and whether src/ had uncommitted changes
+  commit: process.env.GHOSTWRIGHT_BENCH_COMMIT || vcs("rev-parse", "--short=12", "HEAD"),
+  dirty: process.env.GHOSTWRIGHT_BENCH_COMMIT ? undefined : !!vcs("status", "--porcelain", "--", "src"),
   model: MODEL,
   trials: TRIALS,
   replayInputs: NEW_PARAMS ? "new" : "same",

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// ghostwright list | run <flow> [k=v ...] | rollback <flow> [version] | view <url>
-import { existsSync, readFileSync } from "node:fs";
+// ghostwright list | run <flow> [k=v ...] | rollback <flow> [version] | view <url> | extract | init
+import { copyFileSync, existsSync, readFileSync } from "node:fs";
 import { Ghostwright } from "./ghostwright.js";
 import { local } from "./browser.js";
 import { Store } from "./store.js";
@@ -10,11 +10,14 @@ const HELP = `ghostwright: browser flows that replay without a model
   ghostwright list                          saved flows in .ghostwright
   ghostwright run <flow> [key=value ...]    replay a flow (no model: a broken step fails)
   ghostwright rollback <flow> [version]     make an earlier version the active one
-  ghostwright view <url>                    print the page view a model reads
+  ghostwright view <url>                    print the page view a model reads (no model, no key)
+  ghostwright init [file]                   write a quickstart script (default quickstart.mjs) to run with node
   ghostwright extract <url|file> "<what>"   read data off a page as JSON, with usage (needs --model or GHOSTWRIGHT_MODEL)
                                             --schema <file.json> for a JSON Schema of the answer
 
-Options: --store <dir> (default .ghostwright), --headed, --model <provider/model> (repairs)`;
+Options: --store <dir> (default .ghostwright), --headed, --model <provider/model> (repairs), --version`;
+
+const version = (): string => { try { return JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version; } catch { return "unknown"; } };
 
 async function main(argv: string[]): Promise<number> {
   const opts: Record<string, string | boolean> = {};
@@ -24,6 +27,7 @@ async function main(argv: string[]): Promise<number> {
     if (a === "--headed") opts.headed = true;
     else if (a === "--store" || a === "--model" || a === "--schema") opts[a.slice(2)] = argv[++i];
     else if (a === "-h" || a === "--help") { console.log(HELP); return 0; }
+    else if (a === "-v" || a === "--version") { console.log(version()); return 0; }
     else args.push(a);
   }
   const store = String(opts.store || ".ghostwright");
@@ -67,6 +71,13 @@ async function main(argv: string[]): Promise<number> {
         const u = r.meta;
         console.error(`${u.modelCalls} model call${u.modelCalls === 1 ? "" : "s"}, ${u.inputTokens} tokens in, ${u.outputTokens} out, $${u.usd.toFixed(5)}${gw.usage().usdAssumed ? " (assumed price)" : ""}, ${u.ms} ms`);
       } finally { await gw.close(); }
+      return 0;
+    }
+    case "init": {
+      const file = rest[0] || "quickstart.mjs";
+      if (existsSync(file)) { console.error(`${file} is already there; nothing was written`); return 1; }
+      copyFileSync(new URL("../examples/quickstart.mjs", import.meta.url), file);
+      console.log(`wrote ${file}\n\nRun it with a model key (it records a flow with the model, then replays it with none):\n  OPENAI_API_KEY=sk-... node ${file}\nAnother provider: GHOSTWRIGHT_MODEL=google/gemini-3.1-flash-lite with GEMINI_API_KEY, anthropic/... with ANTHROPIC_API_KEY, openrouter/... with OPENROUTER_API_KEY.\nNo key yet? This needs none:\n  npx ghostwright view https://books.toscrape.com`);
       return 0;
     }
     case "view": {

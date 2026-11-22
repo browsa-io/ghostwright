@@ -13,16 +13,20 @@ ${VIEW_GUIDE}
 ${PLACEHOLDERS}
 
 Pick the single next action that carries out the instruction. Answer with one JSON object and nothing else:
-{"action": "click" | "type" | "select" | "check" | "uncheck" | "press" | "hover" | "scroll" | "navigate" | "expand" | "none",
+{"action": "click" | "type" | "select" | "check" | "uncheck" | "press" | "hover" | "scroll" | "navigate" | "dialog" | "expand" | "none",
  "id": <element id, for actions on an element>,
  "text": <text to type>, "clear": <true to replace the field's content>, "submit": <true to press Enter after typing>,
  "option": <option text, for select on a <select>>,
  "keys": <for press, e.g. "Enter", "Escape", "Control+A">,
- "dy": <pixels to scroll, positive is down>, "url": <for navigate>,
+ "dy": <pixels to scroll, positive is down>, "to": <for scroll, instead of dy: "top", "bottom" or a share of the way such as "50%"; with the "id" of a scrolling box it scrolls inside that box>, "url": <for navigate>,
+ "accept": <for dialog: true to accept (OK), false to dismiss (Cancel); "text" answers a prompt>,
  "next": <only when this action opens a menu or list and the instruction needs a second action in it: what to do next>,
  "why": <a few words>}
 Use "select" only for elements whose state lists options (native selects); open other dropdowns with "click".
 A list or table cut short ends with "… N more items (expand [id])": answer {"action": "expand", "id": id} to see all of it.
+What is in a closed menu is not listed: open it first (click it, or "hover" for a menu that opens on hover) and give "next" for what to do in it.
+Dates and times may be written as a person would ("24 December 2026", "10:30").
+When the page says a dialog is pending ('dialog: confirm "..." pending': a JavaScript alert, confirm or prompt is open), nothing else works until it is answered: use {"action": "dialog", "accept": true or false}. Keys do not answer it.
 Use "none" with "why" when the page has nothing that fits.`;
 
 export function actPrompt(instruction: string, view: string, extra = ""): string {
@@ -60,13 +64,15 @@ ${VIEW_GUIDE}
 ${PLACEHOLDERS}
 
 Answer with one JSON object and nothing else:
-{"action": "click" | "type" | "select" | "check" | "uncheck" | "press" | "hover" | "scroll" | "navigate" | "back" | "wait" | "extract" | "expand" | "done",
+{"action": "click" | "type" | "select" | "check" | "uncheck" | "press" | "hover" | "scroll" | "navigate" | "back" | "wait" | "dialog" | "extract" | "expand" | "done",
  "id", "text", "clear", "submit", "option", "keys", "dy", "url": as needed for the action,
+ "accept": <for dialog: true to accept, false to dismiss>,
  "ms": <for wait>, "instruction": <for extract: what to read>,
  "answer": <for done: the result, as text or JSON>, "success": <for done: true or false>,
  "evidence": <for done with success true: {"text": the words on the page that show the result, copied exactly}>,
  "why": <a few words>}
 A list or table cut short ends with "… N more items (expand [id])": answer {"action": "expand", "id": id} to see all of it next step.
+When a JavaScript dialog is pending ('dialog: confirm "..." pending'), answer it with {"action": "dialog", "accept": true or false} before anything else.
 Finish with "done" as soon as the task is complete, or when it cannot be done (success false and why).`;
 
 export const AGENT_HYBRID = `You also see a screenshot of the viewport. For something that has no id in the view (a canvas, a map, an image), click it by position: {"action": "click", "x": <px>, "y": <px>} in viewport pixels.`;
@@ -90,7 +96,7 @@ export function checkPrompt(statement: string, view: string): string {
   return `Statement: ${statement}\n\nPage:\n${view}`;
 }
 
-export const REPAIR_NOTE = (goal: string, why: string) => `This step of a saved flow stopped working (${why}). Its goal: ${goal}`;
+export const REPAIR_NOTE = (goal: string, why: string, recorded = "") => `This step of a saved flow stopped working (${why}). Its goal: ${goal}${recorded ? "\n" + recorded : ""}`;
 
 export const WHOLE_PAGE_NOTE = `The whole page is listed below, also what is out of view. Pick the element itself: it is scrolled into view when you act on it. Do not answer "scroll".`;
 export const SCROLLED_NOTE = `The page was scrolled to show more. Pick the element the instruction needs, or "none" if it is not here.`;

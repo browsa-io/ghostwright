@@ -1,0 +1,94 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Held-out cases</title>
+<style>td,th{border:1px solid #bbb;padding:4px 10px} .fig{display:inline-block;margin:10px;position:relative} .fig .cap{display:none} .fig:hover .cap{display:block} .p{height:60px;border-bottom:1px solid #ddd}</style></head>
+<body style="font:15px system-ui;margin:24px">
+<p id="status">Nothing done</p>
+<div id="case"></div>
+<script>
+  // One page per case (?case=name), after the pages the release gate failed 0.2.0 on.
+  // "__VARIANT__" is "changed" for the redesigned page.
+  const changed = "__VARIANT__" === "changed";
+  const done = s => { document.getElementById('status').textContent = s; };
+  const root = document.getElementById('case');
+  const which = new URLSearchParams(location.search).get('case');
+  const cases = {
+    // a timesheet whose columns are reordered and that gets one more row
+    table() {
+      const sheet = [["Aoife Brennan", "Field", 31.5, 42], ["Kwame Mensah", "Depot", 40, 38], ["Lucía Ferrer", "Field", 22.25, 42], ["Jonas Weber", "Office", 37, 51], ["Mei Tanaka", "Depot", 12, 38]];
+      const rows = changed ? [...sheet, ["Omar Haddad", "Field", 18.75, 44]] : sheet;
+      root.innerHTML = `<h1>Timesheet, week 47</h1><table><thead>${changed ? '<tr><th>Team</th><th>Name</th><th>Rate</th><th>Hours</th></tr>' : '<tr><th>Name</th><th>Team</th><th>Hours</th><th>Rate</th></tr>'}</thead><tbody>` +
+        rows.map(([n, t, h, r]) => changed ? `<tr><td>${t}</td><td>${n}</td><td>${r}</td><td>${h}</td></tr>` : `<tr><td>${n}</td><td>${t}</td><td>${h}</td><td>${r}</td></tr>`).join('') + '</tbody></table>';
+    },
+    // a code that comes 1.2 s after a click, and a button that comes 1.2 s after that
+    late() {
+      root.innerHTML = `<h1>Door access</h1><p>Previous code (expired): 1A1A-0000</p><button id="gen">Generate code</button><p id="o"></p>`;
+      document.getElementById('gen').onclick = function () {
+        this.disabled = true; const o = document.getElementById('o'); o.textContent = 'Generating…';
+        setTimeout(() => { o.innerHTML = 'Code: <b id="code">7F3K-PQ92</b>'; setTimeout(() => { const b = document.createElement('button'); b.textContent = 'Accept code'; b.onclick = () => done('ACCEPTED 7F3K-PQ92'); root.appendChild(b); }, 1200); }, 1200);
+      };
+    },
+    // a link that shows only while its picture is hovered
+    hover() {
+      root.innerHTML = [1, 2, 3].map(n => `<div class="fig"><img alt="User ${n} picture" width="120" height="120" style="background:#ccd"><div class="cap"><b>name: user${n}</b> <a href="?case=profile&u=${n}">View profile</a></div></div>`).join('');
+    },
+    profile() { root.innerHTML = `<h1>Profile of user ${new URLSearchParams(location.search).get('u')}</h1>`; },
+    // a native confirm dialog
+    dialog() {
+      root.innerHTML = `<h1>Drafts</h1><button id="del">Delete draft</button><p id="result">No answer yet</p>`;
+      document.getElementById('del').onclick = () => { const ok = confirm('Delete the draft for good?'); document.getElementById('result').textContent = ok ? 'You clicked: Ok' : 'You clicked: Cancel'; };
+    },
+    // rows with the same button, and a confirmation box (an HTML dialog) before anything is removed
+    drafts() {
+      const removed = [];
+      root.innerHTML = '<h1>Drafts</h1><table>' + ["Q3 plan", "Hiring memo", "Offsite agenda"].map(d => `<tr><td>${d}</td><td><button data-d="${d}">Remove</button></td></tr>`).join('') + '</table><dialog id="dlg"><p id="q"></p><button id="no">Cancel</button> <button id="yes">Remove draft</button></dialog>';
+      const dlg = document.getElementById('dlg');
+      document.getElementById('no').onclick = () => dlg.close();
+      root.querySelectorAll('button[data-d]').forEach(b => { b.onclick = () => { document.getElementById('q').textContent = 'Remove “' + b.dataset.d + '”? This cannot be undone.'; document.getElementById('yes').onclick = () => { removed.push(b.dataset.d); b.closest('tr').remove(); dlg.close(); done('REMOVED ' + removed.join(', ')); }; dlg.showModal(); }; });
+    },
+    // a native prompt() whose answer the page shows
+    prompt() {
+      root.innerHTML = `<h1>Rename</h1><button id="ask">Rename the draft</button><p id="result">No answer yet</p>`;
+      document.getElementById('ask').onclick = () => { const v = prompt('New name for the draft?'); document.getElementById('result').textContent = v === null ? 'You cancelled' : 'You entered: ' + v; };
+    },
+    // a report that says "Running…" for 3 s, then lists warehouses
+    report() {
+      root.innerHTML = `<h1>Capacity report</h1><button id="run">Run report</button><div id="o"></div>`;
+      document.getElementById('run').onclick = function () { this.disabled = true; const o = document.getElementById('o'); o.textContent = 'Running…'; setTimeout(() => { o.innerHTML = '<ul><li>Genoa North</li><li>Lyon Est</li><li>Porto Sul</li></ul>'; }, 3000); };
+    },
+    // the same, from a request that takes 3 s, with nothing on screen meanwhile
+    reportnet() {
+      root.innerHTML = `<h1>Capacity report</h1><button id="run">Run report</button><div id="o"></div>`;
+      document.getElementById('run').onclick = function () { this.disabled = true; fetch('/api/slow').then(r => r.json()).then(j => { document.getElementById('o').innerHTML = '<ul>' + j.rows.map(x => '<li>' + x + '</li>').join('') + '</ul>'; }); };
+    },
+    // a field enabled about 2 s after a click ("Please wait…" meanwhile); with ?never=1 it stays disabled
+    enable() {
+      const never = new URLSearchParams(location.search).get('never');
+      root.innerHTML = `<h1>Dynamic controls</h1><label>Note <input id="note" disabled></label> <button id="en">Enable</button><p id="w"></p>`;
+      document.getElementById('en').onclick = () => { document.getElementById('w').textContent = 'Please wait…'; if (never) return; setTimeout(() => { document.getElementById('note').disabled = false; document.getElementById('w').textContent = "It's enabled!"; }, 2000); };
+    },
+    // a page too short to scroll
+    short() { root.innerHTML = `<h1>Short page</h1><p>Nothing below this line.</p>`; },
+    // a list that a timer fills in, 15 at a time, as the page is scrolled
+    scroll() {
+      const P = Array.from({ length: 45 }, (_, i) => 'Product ' + (100 + i * 7));
+      root.innerHTML = `<h1>Catalogue</h1><div id="list"></div><p id="more">Loading more…</p>`;
+      let n = 0, busy = false;
+      const load = () => { if (busy || n >= P.length) return; busy = true; setTimeout(() => { for (let i = 0; i < 15 && n < P.length; i++, n++) { const d = document.createElement('div'); d.className = 'p'; d.textContent = P[n]; document.getElementById('list').appendChild(d); } busy = false; done('LOADED ' + n); if (n >= P.length) document.getElementById('more').textContent = 'End of catalogue'; }, 350); };
+      load(); addEventListener('scroll', () => { if (innerHeight + scrollY >= document.body.scrollHeight - 80) load(); });
+    },
+    // quotes whose authors repeat
+    authors() {
+      const a = changed ? ["Jane Austen", "Mark Twain", "Jane Austen"] : ["Albert Einstein", "J.K. Rowling", "Albert Einstein", "Jane Austen", "Albert Einstein"];
+      root.innerHTML = '<h1>Quotes</h1>' + a.map((x, i) => `<div class="quote"><span class="text">“Quote number ${i + 1}.”</span> <span>by <small class="author">${x}</small></span></div>`).join('') + '<h2>Top tags</h2><ul id="tags">' + (changed ? ['life', 'books'] : ['love', 'inspirational', 'life']).map(t => `<li><a href="#">${t}</a> <small>(${t.length})</small></li>`).join('') + '</ul>';
+    },
+    // orders with line items
+    orders() {
+      const orders = changed
+        ? [{ id: "A-2001", customer: "Noor Haddad", items: [["QC-55", 2]] }, { id: "A-2002", customer: "Priya Nair", items: [["TR-200", 9], ["LM-9", 1]] }]
+        : [{ id: "A-1042", customer: "Priya Nair", items: [["TR-200", 2], ["BX-17", 1]] }, { id: "A-1043", customer: "Tomás Rey", items: [["LM-9", 4]] }, { id: "A-1047", customer: "Ingrid Solberg", items: [["TR-200", 1], ["QC-55", 6], ["BX-18", 3]] }];
+      root.innerHTML = '<h1>Open orders</h1>' + orders.map(o => `<section class="order"><h2>Order ${o.id}</h2><p class="cust">Customer: ${o.customer}</p><ul>${o.items.map(([s, q]) => `<li><span class="sku">${s}</span> × <span class="qty">${q}</span></li>`).join('')}</ul></section>`).join('') + `<p>${orders.length} orders open. Next pick-up 16:00.</p>`;
+    },
+  };
+  (cases[which] || (() => { root.textContent = 'no such case'; }))();
+</script>
+</body></html>

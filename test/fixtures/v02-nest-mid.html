@@ -1,0 +1,11 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Offers</title></head>
+<body style="font-family:sans-serif;margin:8px">
+<p>Offers from our partner</p>
+<div style="height:40px"></div>
+<iframe id="inner" title="coupon" src="__OTHER_ORIGIN__/frame-inner.html?who=coupon" width="440" height="140"></iframe>
+<script>
+  // pass the inner frame's message up to the top page
+  addEventListener('message', e => { if (e.data && e.data.paid) parent.postMessage(e.data, '*'); });
+</script>
+</body></html>

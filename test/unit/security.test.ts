@@ -142,9 +142,17 @@ describe("H4 purchase guard labels", () => {
   it("blocks orders, payments and subscriptions in many languages", () => {
     for (const l of [
       "注文を確定する", "注文を確定", "提交订单", "立即购买", "Оформить заказ", "Оплатить", "Kupuję i płacę", "Zamawiam z obowiązkiem zapłaty",
-      "Order with obligation to pay", "Order now", "Book now", "Upgrade now", "Donate $25", "Place bid", "Confirm", "Rent now",
-      "Renew membership", "Get Premium", "Checkout", "Köp nu", "Siparişi onayla", "주문하기", "Place your order", "Pay €12,50",
+      "Order with obligation to pay", "Order now", "Donate $25", "Place bid", "Checkout", "Köp nu", "Siparişi onayla", "주문하기", "Place your order", "Pay €12,50",
     ]) expect(buys(l), l).not.toBeNull();
+  });
+  it("blocks subscribe, confirm, book, upgrade and trials only where money is in play", () => {
+    const soft = ["Subscribe", "Confirm", "Book now", "Upgrade now", "Rent now", "Renew membership", "Get Premium", "Start your free trial", "Abonnieren"];
+    for (const l of soft) {
+      expect(purchaseReason([{ tag: "button", type: "submit", labels: [l], ids: [] }]), l).toBeNull();
+      expect(purchaseReason([{ tag: "button", type: "submit", labels: [l], ids: [], money: true }]), l).not.toBeNull();
+    }
+    // a newsletter form and an appointment page: no money
+    expect(controlBuys({ tag: "button", submit: true, labels: ["Subscribe"], ids: ["subscribe"] })).toBeNull();
   });
   it("lets the harmless ones through", () => {
     for (const l of ["Add to cart", "Proceed to checkout", "Buy again", "View cart", "Unsubscribe", "Sign in", "Search", "Continue"]) expect(buys(l), l).toBeNull();

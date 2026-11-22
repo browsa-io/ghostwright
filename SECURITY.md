@@ -16,7 +16,7 @@ Anything that lets a page, a model or a shared flow file do something Ghostwrigh
 - a flow file that writes outside its store, or runs code;
 - an API key sent over plain http, or to a host other than the one configured.
 
-Limits that are documented in the README (under "Limits of 0.1") are known and are not vulnerabilities, but tell us if you find a way to make one worse.
+Limits that are documented in the README (under "Limits of 0.2") are known and are not vulnerabilities, but tell us if you find a way to make one worse.
 
 ## How secrets work, in short
 

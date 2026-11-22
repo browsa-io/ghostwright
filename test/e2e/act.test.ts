@@ -85,6 +85,16 @@ describe("act", () => {
     expect(r.reason).toBe("no visible effect");
   });
 
+  it("a button that does nothing at all is not a success either; one that only changes the page out of sight is", async () => {
+    await gw.goto(`${fx.url}/v02-effects.html`);
+    const dead = await gw.do({ action: "click", role: "button", name: "Dead button" });
+    expect(dead.ok).toBe(false);
+    expect(dead.reason).toMatch(/no effect/);
+    const quiet = await gw.do({ action: "click", role: "button", name: "Quiet save" });
+    expect(quiet.ok).toBe(true);
+    expect(await gw.page.evaluate("document.body.dataset.saved")).toBe("1");
+  });
+
   it("observe returns candidates with locators", async () => {
     await gw.goto(`${fx.url}/login.html`);
     const c = await gw.observe("the sign in button");

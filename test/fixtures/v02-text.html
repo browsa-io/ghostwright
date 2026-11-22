@@ -1,0 +1,19 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Bags – Fixture</title></head>
+<body style="font-family:sans-serif;margin:20px">
+<h1>Bags</h1>
+<div id="list"></div>
+<h2>Rooms</h2>
+<div class="room">Sea View <button>Select</button></div>
+<div class="room">Garden Suite <button>Select</button></div>
+<p id="summary"></p>
+<pre><code id="sample"></code></pre>
+<script>
+  // "changed": other data in the same layout (a new first item, another booking)
+  const changed = "__VARIANT__" === "changed";
+  const bags = changed ? [["Harbor Tote", 1260], ["Kestrel Sling", 45]] : [["Kestrel Sling", 45], ["Kestrel Duffel", 120], ["Harbor Tote", 1260]];
+  document.getElementById("list").innerHTML = bags.map(b => `<div class="card">${b[0]} — $${b[1].toLocaleString("en-US")}</div>`).join("");
+  document.getElementById("summary").textContent = changed ? "Room: Sea View · Check-in: Sat 3 Jan · Guests: 2" : "Room: Garden Suite · Check-in: Fri 12 Dec · Guests: 3";
+  document.getElementById("sample").textContent = changed ? "curl -X DELETE https://api.example.test/v2/hooks/7" : "curl -X POST https://api.example.test/v1/hooks";
+</script>
+</body></html>

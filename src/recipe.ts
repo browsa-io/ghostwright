@@ -10,6 +10,8 @@ export interface Effect {
   kind: "navigate" | "change" | "value" | "none";
   /** navigate: the path it went to (templated) */
   path?: string;
+  /** change: the state the target took (expanded, checked, pressed, selected) */
+  state?: Record<string, string>;
 }
 
 export interface Step {
@@ -34,7 +36,17 @@ export interface Step {
   save_as?: string;
   from?: "page" | "page_json" | "saved";
   source?: string;
-  how?: { jsonpath?: string; css?: string; fields?: Record<string, string>; model?: boolean; into?: string; limit?: number; allow_empty?: boolean };
+  how?: {
+    jsonpath?: string; css?: string; fields?: Record<string, string>; model?: boolean; into?: string; limit?: number; allow_empty?: boolean;
+    /** Ghostwright: per field, the part of the element's text that is the value (a pattern with one group), for a value that is not an element of its own ("Kestrel Sling — $45") */
+    match?: Record<string, string>;
+    /** Ghostwright: per field, the header of the table column the value was read from; a replay that finds another header there fails the step instead of returning shifted data */
+    headers?: Record<string, string>;
+    /** Ghostwright: a list of plain values: the one field of each row that is the value */
+    pick?: string;
+    /** Ghostwright: per field, a list inside each row: the rows' selector relative to the outer row, and their fields */
+    nested?: Record<string, { css: string; fields: Record<string, string>; match?: Record<string, string> }>;
+  };
   schema_ref?: "output";
   expr?: string;
   goal?: string;
@@ -43,6 +55,12 @@ export interface Step {
   /** Ghostwright: check / uncheck / hover on top of click / wait */
   state?: "checked" | "unchecked";
   hover?: boolean;
+  /** Ghostwright: this step's action opens a JavaScript dialog (alert, confirm), answered this way */
+  dialog?: "accept" | "dismiss";
+  /** Ghostwright: the text typed into a prompt() when accepted ({{param}}, or a secret token) */
+  dialog_text?: string;
+  /** Ghostwright: how long after the step before it this step was done when recorded (ms); a replay waits about that long for its element before it gives up */
+  after_ms?: number;
   /** Ghostwright: the output schema of this extract */
   output_schema?: JSONSchema;
 }

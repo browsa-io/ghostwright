@@ -6,7 +6,13 @@ import type { CapturedResponse, PageSession } from "./engine/session.js";
 import { jsonpath, pathOf, templatize, type Step } from "./recipe.js";
 import { coerce, sameJSON, type JSONSchema, type SchemaLike } from "./schema.js";
 
-interface Shape { list: boolean; into?: string; keys: string[]; rows: Record<string, unknown>[]; itemSchema: JSONSchema }
+interface Shape {
+  list: boolean; into?: string; keys: string[]; rows: Record<string, unknown>[]; itemSchema: JSONSchema;
+  /** a list of plain values: each is read as a row with this one field */
+  pick?: string;
+  /** fields that are a list of flat objects inside each row, with their keys */
+  nested?: Record<string, string[]>;
+}
 
 const SCALAR = new Set(["string", "number", "integer", "boolean"]);
 const typeOf = (s: JSONSchema) => (Array.isArray(s?.type) ? s.type.filter((t: string) => t !== "null")[0] : s?.type);
@@ -17,12 +23,25 @@ function shape(schema: JSONSchema, answer: unknown): Shape | null {
   if (props.length === 1 && typeOf(props[0][1]) === "array") {
     const [into, arr] = props[0];
     const item = arr.items as JSONSchema;
-    if (typeOf(item) !== "object" || !item.properties) return null;
-    const keys = Object.keys(item.properties);
-    if (!keys.every(k => SCALAR.has(typeOf(item.properties[k])))) return null;
     const rows = (answer as any)[into];
     if (!Array.isArray(rows) || !rows.length) return null;
-    return { list: true, into, keys, rows, itemSchema: item };
+    // a list of plain values ("the author of every quote")
+    if (item && SCALAR.has(typeOf(item)) && typeOf(item) !== "boolean") {
+      if (rows.some(v => v == null || typeof v === "object")) return null;
+      return { list: true, into, keys: ["value"], rows: rows.map(v => ({ value: v })), itemSchema: { type: "object", properties: { value: item }, required: ["value"] }, pick: "value" };
+    }
+    if (typeOf(item) !== "object" || !item.properties) return null;
+    const keys: string[] = [], nested: Record<string, string[]> = {};
+    for (const [k, s] of Object.entries(item.properties as Record<string, JSONSchema>)) {
+      if (SCALAR.has(typeOf(s))) { keys.push(k); continue; }
+      // one level of nesting: a list of flat objects inside each row
+      const it = typeOf(s) === "array" ? (s.items as JSONSchema) : null;
+      if (!it || typeOf(it) !== "object" || !it.properties || !Object.values(it.properties as Record<string, JSONSchema>).every(x => SCALAR.has(typeOf(x)))) return null;
+      if (rows.some(r => !Array.isArray(r?.[k]))) return null;
+      nested[k] = Object.keys(it.properties);
+    }
+    if (!keys.length) return null;
+    return { list: true, into, keys, rows, itemSchema: item, ...(Object.keys(nested).length ? { nested } : {}) };
   }
   if (props.every(([, s]) => SCALAR.has(typeOf(s)))) return { list: false, keys: props.map(p => p[0]), rows: [answer as Record<string, unknown>], itemSchema: schema };
   return null;
@@ -131,7 +150,7 @@ function matches(page: unknown, model: unknown): boolean {
 function verify(value: unknown, sh: Shape, schema: SchemaLike, answer: unknown, how: NonNullable<Step["how"]>): { how: NonNullable<Step["how"]>; value: unknown } | null {
   if (value == null) return null;
   const v = coerce(sh.list ? { type: "array", items: sh.itemSchema } : sh.itemSchema, value);
-  const wrap = (x: unknown) => (sh.list ? { [sh.into!]: x } : x);
+  const wrap = (x: unknown) => (sh.list ? { [sh.into!]: sh.pick && Array.isArray(x) ? x.map(r => (r as any)?.[sh.pick!]) : x } : x);
   const ok = (x: unknown) => { const c = schema.check(wrap(x)); return c.ok && matches(c.value, answer) ? c.value : null; };
   let got = ok(v);
   if (got) return { how, value: got };
@@ -159,6 +178,152 @@ export function stripTokens(url: string): string {
   return u.toString();
 }
 
+// ---- a value that is a part of an element's text -------------------------------
+
+const NUM = "(-?\\d[\\d,]*(?:\\.\\d+)?)";
+const reEsc = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+const flat = (s: string) => s.replace(/\s+/g, " ").trim();
+
+/** Where `value` sits in `text`: [start, end), or null. A number matches a written number equal to it. */
+export function spanOf(text: string, value: unknown): [number, number] | null {
+  if (typeof value === "number") {
+    for (const m of text.matchAll(/-?\d[\d,]*(?:\.\d+)?/g)) if (parseFloat(m[0].replace(/,/g, "")) === value) return [m.index!, m.index! + m[0].length];
+    return null;
+  }
+  if (typeof value !== "string" || !flat(value)) return null;
+  const v = flat(value);
+  let i = text.indexOf(v);
+  if (i < 0) i = text.toLowerCase().indexOf(v.toLowerCase());
+  return i < 0 ? null : [i, i + v.length];
+}
+
+/**
+ * A pattern with one group that reads the value at `span` out of `text`, held in place by what
+ * stands right before and after it: its label and punctuation ("Check-in: ", " — $", " guests"),
+ * up to 24 characters, never reaching into another value (`others`) or across a digit (digits
+ * are data, not labels).
+ */
+export function spanPattern(text: string, span: [number, number], numeric: boolean, others: [number, number][] = []): string | null {
+  const left = text.slice(0, span[0]), right = text.slice(span[1]);
+  const W = /[\p{L}\p{N}]/u;
+  const from = Math.max(0, span[0] - 24, ...others.filter(o => o[1] <= span[0]).map(o => o[1]));
+  let l = left.slice(from);
+  if (from > 0 && W.test(left[from - 1]) && W.test(l[0] || "")) l = l.replace(/^[\p{L}\p{N}]+/u, ""); // cut inside a word
+  l = l.replace(/^.*\d/su, "");
+  const to = Math.min(24, ...others.filter(o => o[0] >= span[1]).map(o => o[0] - span[1]));
+  let r = right.slice(0, to);
+  if (to < right.length && W.test(right[to]) && W.test(r[r.length - 1] || "")) r = r.replace(/[\p{L}\p{N}]+$/u, "");
+  r = r.replace(/\d.*$/su, "");
+  // something must hold a text value in place on each side that has text
+  if (!numeric && ((left && !l.trim()) || (right && !r.trim()))) return null;
+  const before = !left ? "^" : reEsc(l), after = !right ? "$" : reEsc(r);
+  return before + (numeric ? NUM : after ? "(.+?)" : "(.+)") + after;
+}
+
+/** Reads a value out of an element's text with a recipe's pattern; null when it is not there. */
+export function applyMatch(text: unknown, pattern: string): string | null {
+  if (typeof text !== "string" || pattern.length > 400) return null;
+  try {
+    const m = new RegExp(pattern, "u").exec(flat(text).slice(0, 5000));
+    if (!m || m[1] == null || !m[1].trim()) return null;
+    // a written number: without its thousands separators
+    return pattern.includes(NUM) ? m[1].replace(/,/g, "") : m[1].trim();
+  } catch { return null; }
+}
+
+/** Applies the patterns of nested lists (`how.nested[k].match`) to rows read by css. */
+export function nestRows(value: unknown, nested: NonNullable<NonNullable<Step["how"]>["nested"]>): unknown {
+  const one = (row: any) => {
+    if (!row || typeof row !== "object") return row;
+    const out = { ...row };
+    for (const [k, n] of Object.entries(nested)) if (n.match && Array.isArray(out[k])) out[k] = matchRows(out[k], n.match);
+    return out;
+  };
+  return Array.isArray(value) ? value.map(one) : one(value);
+}
+
+/** The page changed under a compiled read (a column under another header): the step must fail. */
+export class ReadChanged extends Error {}
+
+/** Reads the page the way a compiled extract says: selectors, column headers checked, patterns, nested lists. */
+export async function readDom(session: PageSession, how: NonNullable<Step["how"]>): Promise<unknown> {
+  let v = await session.domExtract({ css: how.css ?? null, fields: how.fields, limit: how.limit, headers: how.headers, nested: how.nested });
+  if (v && typeof v === "object" && !Array.isArray(v) && typeof (v as any).__changed === "string") throw new ReadChanged((v as any).__changed);
+  if (how.match) v = matchRows(v, how.match);
+  if (how.nested) v = nestRows(v, how.nested);
+  return v;
+}
+
+/** Adds what a compiled list read needs beyond its selectors: the nested lists, and the column headers to check on replay. */
+async function complete(session: PageSession, sh: Shape, how: NonNullable<Step["how"]>): Promise<NonNullable<Step["how"]> | null> {
+  const out = { ...how };
+  if (sh.pick) out.pick = sh.pick;
+  if (sh.nested) {
+    if (!out.css) return null;
+    out.nested = {};
+    for (const [k, keys] of Object.entries(sh.nested)) {
+      const inner = sh.rows.map(r => ((r[k] as Record<string, unknown>[]) || []).map(ir => Object.fromEntries(keys.map(f => [f, forms(ir[f])]))));
+      if (inner.some(rows => rows.some(ir => keys.some(f => !ir[f].length)))) return null;
+      const spec = await session.nest(out.css, inner, keys);
+      if (!spec) return null;
+      const first = (sh.rows.find(r => (r[k] as unknown[]).length)![k] as Record<string, unknown>[])[0];
+      const spans: Record<string, [number, number]> = {};
+      const match: Record<string, string> = {};
+      for (const f of keys) { const sp = spanOf(spec.texts[f], first[f]); if (!sp) return null; spans[f] = sp; }
+      for (const f of keys) {
+        if (typeof first[f] === "string" && flat(spec.texts[f]) === flat(first[f] as string)) continue;
+        const others = keys.filter(o => o !== f && spec.fields[o] === spec.fields[f]).map(o => spans[o]);
+        const p = spanPattern(spec.texts[f], spans[f], typeof first[f] === "number", others);
+        if (!p) return null;
+        match[f] = p;
+      }
+      out.nested[k] = { css: spec.css, fields: spec.fields, ...(Object.keys(match).length ? { match } : {}) };
+    }
+  }
+  if (out.css && out.fields) {
+    const headers = (await session.domExtract({ css: out.css, fields: out.fields, wantHeaders: true })) as Record<string, string>;
+    if (headers && Object.keys(headers).length) out.headers = headers;
+  }
+  return out;
+}
+
+/** Applies `how.match` to rows read by css (one object, or a list of them). */
+export function matchRows(value: unknown, match: Record<string, string>): unknown {
+  const one = (row: any) => (row && typeof row === "object" ? Object.fromEntries(Object.entries(row).map(([k, v]) => [k, match[k] ? applyMatch(v, match[k]) : v])) : row);
+  return Array.isArray(value) ? value.map(one) : one(value);
+}
+
+const forms = (v: unknown): string[] => {
+  if (typeof v === "number" && Number.isFinite(v)) return [...new Set([String(v), v.toFixed(2), v.toLocaleString("en-US"), v.toLocaleString("en-US", { minimumFractionDigits: 2 })])];
+  return typeof v === "string" && flat(v) ? [flat(v)] : [];
+};
+
+async function compileText(session: PageSession, sh: Shape): Promise<NonNullable<Step["how"]> | null> {
+  const rows = sh.rows.map(r => Object.fromEntries(sh.keys.map(k => [k, forms(r[k])])));
+  if (rows.some(r => sh.keys.some(k => !r[k].length))) return null;
+  const spec = await session.holders(rows, sh.keys);
+  if (!spec) return null;
+  const row0 = sh.rows[0];
+  const spans: Record<string, [number, number]> = {};
+  for (const k of sh.keys) {
+    const sp = spanOf(spec.texts[k], row0[k]);
+    if (!sp) return null;
+    spans[k] = sp;
+  }
+  const match: Record<string, string> = {};
+  for (const k of sh.keys) {
+    const text = spec.texts[k];
+    // the whole text is the value: no pattern needed
+    if (typeof row0[k] === "string" && flat(text) === flat(row0[k] as string)) continue;
+    const others = sh.keys.filter(o => o !== k && spec.fields[o] === spec.fields[k]).map(o => spans[o]);
+    const p = spanPattern(text, spans[k], typeof row0[k] === "number", others);
+    if (!p) return null;
+    match[k] = p;
+  }
+  if (!Object.keys(match).length) return null;
+  return { ...(spec.css ? { css: spec.css } : {}), fields: spec.fields, match, ...(sh.into ? { into: sh.into } : {}) };
+}
+
 export interface Compiled {
   layer: "fetch" | "page_json" | "css";
   steps: Step[];
@@ -173,7 +338,7 @@ export async function compileExtract(o: {
   const sh = shape(o.schema.json, o.answer);
   if (!sh) return null;
   // 1. JSON the page fetched (GET only: it is fetched again on replay)
-  for (const r of [...o.captured].reverse()) {
+  for (const r of sh.pick || sh.nested ? [] : [...o.captured].reverse()) {
     if (r.method !== "GET" || r.status >= 400) continue;
     let doc: unknown;
     try { doc = JSON.parse(r.body); } catch { continue; }
@@ -193,7 +358,7 @@ export async function compileExtract(o: {
   }
   // 2. JSON embedded in the page
   try {
-    for (const d of await o.session.pageJson()) {
+    for (const d of sh.pick || sh.nested ? [] : await o.session.pageJson()) {
       const how = matchJSON(d.json, sh);
       const ok = how && verify(readJSON(d.json, how), sh, o.schema, o.answer, how);
       if (ok) return { layer: "page_json", steps: [{ id: o.id, kind: "extract", from: "page_json", source: d.sel, how: ok.how, schema_ref: "output", goal: o.goal }], value: ok.value };
@@ -208,11 +373,23 @@ export async function compileExtract(o: {
       const textFields = Object.fromEntries(Object.entries(spec.fields).map(([k, f]) => [k, f.replace(/\s*@(title|alt|aria-label)$/, "")]));
       const tries = [spec.fields, ...(JSON.stringify(textFields) !== JSON.stringify(spec.fields) ? [textFields] : [])];
       for (const fields of tries) {
-        const how: NonNullable<Step["how"]> = { ...(spec.css ? { css: spec.css } : {}), fields, ...(sh.into ? { into: sh.into } : {}) };
-        const value = await o.session.domExtract({ css: spec.css, fields });
+        const how = await complete(o.session, sh, { ...(spec.css ? { css: spec.css } : {}), fields, ...(sh.into ? { into: sh.into } : {}) });
+        if (!how) continue;
+        const value = await readDom(o.session, how);
         const ok = verify(value, sh, o.schema, o.answer, how);
         if (ok) return { layer: "css", steps: [{ id: o.id, kind: "extract", from: "page", how: ok.how, schema_ref: "output", goal: o.goal }], value: ok.value };
       }
+    }
+  } catch { /* not compilable */ }
+  // 4. a part of an element's text, read with a pattern (kept, like the others, only when it
+  //    reads back the model's answer)
+  try {
+    const text = await compileText(o.session, sh);
+    const how = text && (await complete(o.session, sh, text));
+    if (how) {
+      const value = await readDom(o.session, how);
+      const ok = verify(value, sh, o.schema, o.answer, how);
+      if (ok) return { layer: "css", steps: [{ id: o.id, kind: "extract", from: "page", how: ok.how, schema_ref: "output", goal: o.goal }], value: ok.value };
     }
   } catch { /* not compilable */ }
   return null;

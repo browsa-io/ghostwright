@@ -1,0 +1,28 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Tiers – Fixture</title></head>
+<body style="font-family:sans-serif;margin:20px">
+<h1>Choose a tier</h1>
+<p id="status">Nothing done</p>
+<div class="card" id="pro"><h2>Pro</h2><p>$9 / month</p>
+  <button onclick="done('PAID-SUBSCRIBE')">Subscribe</button>
+  <button onclick="done('PAID-TRIAL')">Start your 14-day free trial</button>
+  <button onclick="done('PAID-UPGRADE')">Upgrade to Pro</button>
+  <a href="#" onclick="done('REVIEWS');return false">Book reviews</a>
+  <a href="#" onclick="done('DEMO');return false">Book a demo</a>
+  <button onclick="done('DETAILS')">See details</button>
+</div>
+<div class="card" id="stay"><h2>Garden Suite</h2><p>€120 per night</p>
+  <button onclick="done('PAID-BOOK')">Book now</button>
+  <button onclick="done('PAID-CONFIRM')">Confirm</button>
+  <button onclick="done('COMPARED')">Compare</button>
+</div>
+<form id="signup" onsubmit="event.preventDefault();done('SIGNED-UP')">
+  <p>Team plan, $29 per month after the trial</p>
+  <label>Password <input type="password" id="pw"></label>
+  <label>Confirm password <input type="password" id="pw2"></label>
+  <label><input type="radio" name="how" id="bycard"> Pay with card</label>
+  <label><input type="checkbox" id="nl"> Subscribe to our newsletter</label>
+  <button type="button" onclick="done('NEWSLETTER')">Subscribe to our newsletter</button>
+</form>
+<script>function done(s){ document.getElementById('status').textContent = s; }</script>
+</body></html>

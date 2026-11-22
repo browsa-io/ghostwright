@@ -1,0 +1,10 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Effects – Fixture</title></head><body>
+<h1>Effects</h1>
+<button id="dead">Dead button</button>
+<button id="quiet" onclick="document.body.dataset.saved='1'">Quiet save</button>
+<p>Rate this: <span id="stars">
+  <button aria-label="1 star" onclick="rate(1)">★</button><button aria-label="2 stars" onclick="rate(2)">★</button><button aria-label="3 stars" onclick="rate(3)">★</button>
+</span></p>
+<script>function rate(n){ document.getElementById('stars').dataset.rating = String(n); }</script>
+</body></html>

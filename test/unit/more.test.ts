@@ -10,7 +10,7 @@ import type { ActResult } from "../../src/engine/session.js";
 describe("purchase guard phrases", () => {
   const f = (label: string, tag = "button", ids: string[] = []) => controlBuys({ tag, labels: [label], ids });
   it("knows what buys", () => {
-    for (const l of ["Place your order", "Buy now", "Pay €12,50", "Confirm and pay", "Subscribe & Save", "Start your 30-day free trial", "Jetzt kaufen", "Valider ma commande", "Comprar ahora"]) {
+    for (const l of ["Place your order", "Buy now", "Pay €12,50", "Confirm and pay", "Jetzt kaufen", "Valider ma commande", "Comprar ahora"]) {
       expect(f(l), l).not.toBeNull();
     }
   });

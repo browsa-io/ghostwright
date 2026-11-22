@@ -219,7 +219,11 @@ describe("H5 sandbox", () => {
     const g = await open({ store: tempStore() });
     try {
       let args = "";
-      try { args = execSync("ps -axww -o args | grep -i 'playwright_chromiumdev_profile' | grep -v grep | grep -v 'type=' | head -1").toString(); } catch { /* none */ }
+      // this test's own browser: the Chrome this process started (other Chromes on the machine do not count)
+      try {
+        args = execSync("ps -axww -o ppid=,args=").toString().split("\n")
+          .filter(l => l.trim().startsWith(String(process.pid) + " ") && l.includes("playwright_chromiumdev_profile") && !l.includes("--type="))[0] || "";
+      } catch { /* none */ }
       expect(args).toContain("playwright_chromiumdev_profile");
       expect(args).not.toContain("--no-sandbox");
     } finally { await g.close(); }

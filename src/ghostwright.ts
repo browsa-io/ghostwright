@@ -7,11 +7,12 @@ import { findTokenCaptchas, injectToken, type CaptchaSolver } from "./captcha.js
 import { BrowsaCloud, type CloudRun, type PushOptions, type PushResult, type RobotOptions } from "./cloud.js";
 import { compileExtract } from "./compile.js";
 import { PageSession, type Action, type ActResult, type Target } from "./engine/session.js";
+import type { Change } from "./engine/diff.js";
 import type { SettleConfig } from "./engine/settle.js";
 import type { View } from "./engine/view.js";
 import { ActionError, ChallengeError, CostLimitError, GhostwrightError, NoModelError, SecretOriginError } from "./errors.js";
-import { purchaseReason } from "./guard.js";
-import { defaultCacheDir, isTransient, parseJSON, resolveModel, type ModelClient, type ModelSpec, type Price } from "./model/index.js";
+import { purchaseReason, SUBMIT_GUARD } from "./guard.js";
+import { defaultCacheDir, isTransient, parseJSON, resolveModel, retryDelay, type ModelClient, type ModelSpec, type Price } from "./model/index.js";
 import * as P from "./model/prompts.js";
 import { paramsSchema, recipeName, render, templatize, templatizePath, type Effect, type Recipe, type Step } from "./recipe.js";
 import { hostsOf, runFlow, shownTokens, type RunOptions, type RunResult } from "./replay.js";
@@ -64,6 +65,8 @@ export interface GhostwrightOptions {
   viewBudget?: number;
   /** one more model call when an action fails or does nothing (default true) */
   selfHeal?: boolean;
+  /** when an action opens a new tab, go on working in that tab, as a person would (default true); false stays in the first tab */
+  followNewTabs?: boolean;
   settle?: Partial<SettleConfig>;
   /** Browsa cloud calls (push, runOnBrowsa, robot): default BROWSA_API_KEY */
   browsaApiKey?: string;
@@ -122,6 +125,10 @@ export interface Candidate {
   action: string;
   description: string;
   target: Target | null;
+  /** one CSS selector from the top document; an element in a frame comes after its frames: "iframe >>> button" */
+  selector?: string;
+  /** the frame the element is in (its address without the query), when it is in one */
+  frame?: string;
 }
 
 export interface CheckOutcome {
@@ -139,6 +146,8 @@ export interface ExtractOptions {
   html?: string;
   /** read from a local HTML file instead of the current page */
   file?: string;
+  /** when nothing is read while the page is still at work (a request in flight, "Running…"), how long to wait for it before reading once more (ms, default 15000; 0 turns it off) */
+  waitMs?: number;
 }
 
 export interface ExtractOutcome<T> {
@@ -173,7 +182,7 @@ export interface AgentOutcome {
 interface Decision {
   action: string; id?: number; text?: string; clear?: boolean; submit?: boolean; option?: string; keys?: string;
   dy?: number; url?: string; next?: string; why?: string; x?: number; y?: number; ms?: number; instruction?: string;
-  answer?: unknown; success?: boolean;
+  answer?: unknown; success?: boolean; accept?: boolean;
 }
 
 /** @internal the flow being recorded */
@@ -186,12 +195,18 @@ export interface Recorder {
   n: number;
   /** hosts the recorded steps ran on */
   hosts: Set<string>;
+  /** when the last step was recorded, and how many steps had been by then */
+  lastAt: number;
+  stamped: number;
+  /** instructions that failed while recording: they are not in the flow */
+  failed: string[];
 }
 
 export class Ghostwright {
-  readonly page: Page;
+  /** the tab Ghostwright works in: a link that opens a new tab moves it there, as a person would follow it */
+  page: Page;
   readonly browserKind: "local" | "cdp" | "browsa";
-  /** @internal */ readonly session: PageSession;
+  /** @internal */ session: PageSession;
   /** @internal */ readonly secrets: Secrets;
   /** @internal */ readonly store: Store;
   /** @internal */ readonly meter: Meter;
@@ -218,12 +233,17 @@ export class Ghostwright {
     this.meter = new Meter(o.maxCostUsd);
     this.tracer = new Tracer(null, this.secrets, o.debug ?? false);
     session.purchaseGuard = o.allowPurchases ? null : purchaseReason;
+    session.submitGuard = o.allowPurchases ? null : SUBMIT_GUARD;
     session.allowedOrigins = o.allowedOrigins?.length ? o.allowedOrigins : null;
     session.secretInUrl = (url, names) => this.secrets.inUrl(url, names);
     // a store made by an older version may be readable by others: owner only from now on
     this.store.tighten();
   }
 
+  /**
+   * Opens the browser (local Chrome unless `browser` says otherwise) and returns a Ghostwright on its tab.
+   * A model whose key is missing is reported here, before any browser starts.
+   */
   static async create(o: GhostwrightOptions = {}): Promise<Ghostwright> {
     const specs = [...(Array.isArray(o.model) ? o.model : o.model ? [o.model] : []), ...(o.fallbackModels || [])];
     const ro = { apiKey: o.modelApiKey, cacheDir: o.cacheDir ?? defaultCacheDir(), livePrices: o.livePrices };
@@ -247,6 +267,7 @@ export class Ghostwright {
     }
   }
 
+  /** Closes a browser Ghostwright started; detaches from one it attached to (`cdp()`), which keeps running. */
   async close(): Promise<void> {
     await this.session.close().catch(() => undefined);
     await this.opened.close();
@@ -321,7 +342,7 @@ export class Ghostwright {
           if ((e as Error)?.name === "TimeoutError") this.meter.charged(kind, m, system + safe, Date.now() - t0);
           lastErr = e;
           this.tracer.write("model", { kind, model: m.id, status: "failed", reason: String((e as Error)?.message ?? e).slice(0, 200) });
-          if (attempt === 0 && isTransient(e)) { await new Promise(r => setTimeout(r, 800)); continue; }
+          if (attempt === 0 && isTransient(e)) { await new Promise(r => setTimeout(r, retryDelay(e))); continue; }
           break;
         }
       }
@@ -330,6 +351,7 @@ export class Ghostwright {
     throw lastErr ?? overCap;
   }
 
+  /** Is a model configured? Without one, run() replays and nothing is repaired. */
   get hasModel(): boolean { return this.models.length > 0; }
   /** @internal */ get warn(): boolean { return this.o.warnings ?? true; }
 
@@ -356,6 +378,7 @@ export class Ghostwright {
       rec.startUrl ??= real;
       const tpl = url.replace(/%([A-Za-z_]\w*)%/g, (m, k) => (k in vars ? `{{${k}}}` : m));
       rec.steps.push({ id: this.stepId(), kind: "navigate", url: templatize(tpl, rec.params) });
+      this.stamp();
       for (const h of hostsOf(this.session.currentURL)) rec.hosts.add(h);
     }
     this.tracer.write("goto", { url: real, status: r.status });
@@ -393,7 +416,27 @@ export class Ghostwright {
     return this.session.waitReady(o.timeoutMs ?? 15000);
   }
 
-  /** The open tabs with their real titles (the first is the page Ghostwright drives). */
+  /** @internal after an action that opened a tab: work in that tab from now on */
+  async followNewTab(r: ActResult): Promise<void> {
+    if (r.status !== "ok" || !r.newTabs.length || this.o.followNewTabs === false) return;
+    const ctx = this.page.context();
+    let p: Page | undefined;
+    for (let i = 0; i < 30 && !p; i++) {
+      p = ctx.pages().filter(x => x !== this.page && !x.isClosed()).pop();
+      if (!p) await new Promise(res => setTimeout(res, 100));
+    }
+    if (!p) return;
+    await p.waitForLoadState("domcontentloaded", { timeout: 10000 }).catch(() => undefined);
+    if (p.isClosed()) return;
+    const next = await this.session.follow(p, { settle: this.o.settle });
+    await this.session.close().catch(() => undefined);
+    this.session = next;
+    this.page = p;
+    await p.bringToFront().catch(() => undefined);
+    this.tracer.write("tab", { url: p.url() });
+  }
+
+  /** The open tabs with their real titles (the first is the tab Ghostwright works in). */
   async tabs(): Promise<{ url: string; title: string; current: boolean }[]> {
     const pages = this.page.context().pages();
     const list = [this.page, ...pages.filter(p => p !== this.page)];
@@ -411,61 +454,126 @@ export class Ghostwright {
     const vars = { ...stringify(this.recorder?.params || {}), ...stringify(o.variables || {}) };
     // the secrets this instruction names, and no others
     const allowed = new Set(placeholders(instruction).filter(n => this.secrets.has(n)));
+    const ex = await this.actCore(instruction, vars, allowed);
+    if (ex.ok && this.recorder) this.recorder.steps.push(...ex.steps);
+    if (!ex.ok && this.recorder) this.recorder.failed.push(instruction);
+    this.stamp();
+    this.tracer.write("act", { instruction, action: ex.action, status: ex.ok ? "ok" : "failed", reason: ex.reason, layer: "model" });
+    return { ok: ex.ok, action: this.secrets.scrub(ex.action), result: this.secrets.scrub(ex.result?.text ?? ""), reason: ex.reason, meta: this.end(b) };
+  }
+
+  /**
+   * @internal one instruction: the model picks, Ghostwright acts and checks. Also what a replay
+   * repair runs (with a note on what the step did when recorded, and the run's params).
+   */
+  async actCore(instruction: string, vars: Record<string, string>, allowed: Set<string>, extra = "", stepParams?: Record<string, unknown>): Promise<{ ok: boolean; reason?: string; action: string; result: ActResult | null; steps: Step[] }> {
+    const hint = (...xs: string[]) => [extra, ...xs, this.hints(allowed)].filter(Boolean).join("\n");
     let view = await this.view();
     const shown = this.showVars(instruction, vars);
-    let d = (await this.ask("act", P.ACT_SYSTEM, P.actPrompt(shown, view.text, this.hints(allowed)))) as Decision;
+    let d = (await this.ask("act", P.ACT_SYSTEM, P.actPrompt(shown, view.text, hint()))) as Decision;
     // a scroll is not what was asked unless the instruction says scroll: the
     // target is further down, so read the whole page and act on the element
     const wantsScroll = /\bscroll|\bpage ?(down|up)\b/i.test(instruction);
     const notInView = (x: Decision) => x.action === "none" || (x.action === "scroll" && !wantsScroll);
     if (notInView(d) && view.scope === "viewport") {
-      view = await this.view("page", Math.max(this.budget(), 6000));
-      d = (await this.ask("act", P.ACT_SYSTEM, P.actPrompt(shown, view.text, [P.WHOLE_PAGE_NOTE, this.hints(allowed)].filter(Boolean).join("\n")))) as Decision;
+      view = await this.view("page", Math.max(this.budget(), 6000), false, 0, true);
+      d = (await this.ask("act", P.ACT_SYSTEM, P.actPrompt(shown, view.text, hint(P.WHOLE_PAGE_NOTE)))) as Decision;
     }
     // a folded list: show all of it and ask again
     for (let i = 0; i < 2 && d.action === "expand" && d.id != null; i++) {
       view = await this.view(view.scope === "page" ? "page" : "viewport", Math.max(this.budget(), 6000), false, Number(d.id));
-      d = (await this.ask("act", P.ACT_SYSTEM, P.actPrompt(shown, view.text, this.hints(allowed)))) as Decision;
+      d = (await this.ask("act", P.ACT_SYSTEM, P.actPrompt(shown, view.text, hint()))) as Decision;
     }
     if (d.action === "expand") d = { action: "none", why: "the list did not show the target when expanded" } as Decision;
     let scrolled = "";
     if (d.action === "scroll" && !wantsScroll) {
       // more may load further down: scroll once, then act on what is there
-      const sx = await this.execute(d, vars, instruction, undefined, allowed);
+      const sx = await this.execute(d, vars, instruction, stepParams, allowed);
       scrolled = sx.action + "; ";
       view = await this.view();
-      d = (await this.ask("act", P.ACT_SYSTEM, P.actPrompt(shown, view.text, [P.SCROLLED_NOTE, this.hints(allowed)].filter(Boolean).join("\n")))) as Decision;
+      d = (await this.ask("act", P.ACT_SYSTEM, P.actPrompt(shown, view.text, hint(P.SCROLLED_NOTE)))) as Decision;
       if (d.action === "scroll") d = { action: "none", why: "the target was not found on the page (the model only scrolled)" } as Decision;
     }
-    if (d.action === "none") {
-      this.tracer.write("act", { instruction, status: "none", reason: d.why });
-      return { ok: false, action: scrolled + "none", result: "", reason: d.why || "nothing on the page fits", meta: this.end(b) };
-    }
-    let ex = await this.execute(d, vars, instruction, undefined, allowed);
+    if (d.action === "none") return { ok: false, action: scrolled + "none", result: null, reason: d.why || "nothing on the page fits", steps: [] };
+    let ex = await this.execute(d, vars, instruction, stepParams, allowed);
+    if (ex.ok && d.action === "dialog" && this.recorder?.steps.length) answerOn(this.recorder.steps[this.recorder.steps.length - 1], d, ex.dialogText);
     // a safety guard refused it: report that, never look for another way round
     if (!ex.ok && !ex.result.guard && (this.o.selfHeal ?? true)) {
       view = await this.view();
       const note = `Your last action (${ex.action}) did not work: ${ex.reason}. Choose again.`;
-      d = (await this.ask("act", P.ACT_SYSTEM, P.actPrompt(shown, view.text, note + "\n" + this.hints(allowed)))) as Decision;
-      if (d.action !== "none") ex = await this.execute(d, vars, instruction, undefined, allowed);
+      d = (await this.ask("act", P.ACT_SYSTEM, P.actPrompt(shown, view.text, hint(note)))) as Decision;
+      if (d.action !== "none") ex = await this.execute(d, vars, instruction, stepParams, allowed);
     }
-    // a second action inside what the first one opened (a menu, a list):
-    // when the model says so, or when the click visibly opened a popup
-    const opened = ex.ok && d.action === "click" && !ex.result.view && ex.result.changes.some(c =>
-      (c.op === "changed" && c.id === Number(d.id) && c.fields?.expanded === "true") ||
-      (c.op === "added" && ["option", "menuitem", "menuitemradio", "menuitemcheckbox", "listbox", "menu"].includes(c.role)));
-    if (ex.ok && (d.next || opened)) {
-      const goal = d.next || instruction;
-      const note = `After ${ex.action}, this changed (what opened is listed below). Finish the instruction with one more action, or answer "none" if it is already done.`;
-      const d2 = (await this.ask("two-step", P.ACT_SYSTEM, P.actPrompt(goal, ex.result.text, note))) as Decision;
-      if (d2.action !== "none") {
-        const ex2 = await this.execute(d2, vars, goal, undefined, allowed);
-        ex = { ...ex2, action: ex.action + "; " + ex2.action, steps: [...ex.steps, ...ex2.steps] };
+    // More to do after the first action? When the model says so ("next"), when the action opened
+    // something to choose in (a menu, a list), when it left a JavaScript dialog open, or when the
+    // instruction has several parts ("... and ...", "... then ..."). The model is
+    // shown the page as it is now and what was done, and answers "none" when nothing is left: ok
+    // means the whole instruction, not its first part.
+    // (quoted text is left out: "type 'bread and butter'" is one part)
+    const multi = /\b(and|then|after that|afterwards)\b/i.test(instruction.replace(/"[^"]*"|'[^']*'|“[^”]*”/g, " "));
+    let lastD = d;
+    for (let i = 0; i < 3 && ex.ok && ex.result; i++) {
+      const r = ex.result;
+      const opened = lastD.action === "click" && !r.view && (r.changes.some(c =>
+        (c.op === "changed" && c.id === Number(lastD.id) && c.fields?.expanded === "true") ||
+        (c.op === "added" && ["option", "menuitem", "menuitemradio", "menuitemcheckbox", "listbox", "menu"].includes(c.role))) || opensChoice(instruction, r.changes, Number(lastD.id)));
+      const dialogOpen = !!r.dialog && lastD.action !== "dialog";
+      const left = typeof lastD.next === "string" ? lastD.next.trim() : "";
+      // a hover is never the whole of an instruction that does not ask for a hover: it showed something to act on
+      const hoverOnly = lastD.action === "hover" && i === 0 && !/hover|mouse ?over|point(er)? (at|to|over)/i.test(instruction);
+      if (!(left || opened || dialogOpen || hoverOnly || (multi && i === 0 && !["scroll", "none"].includes(lastD.action)))) break;
+      // What a click opened (a menu, a list, a panel) is shown as what changed, with the wording 0.1
+      // used: the model picks in it, or answers "none". A confirmation the instruction did not ask
+      // for is left for the next instruction. In the other cases (a dialog, several parts) the model
+      // sees the whole page as it is now and is told what was done.
+      const inOpened = opened && !dialogOpen;
+      const goal = instruction;
+      const asked = inOpened ? (left || shown) : shown;
+      const note = inOpened
+        ? `After ${this.secrets.scrub(ex.action)}, this changed (what opened is listed below). Finish the instruction with one more action, or answer "none" if it is already done. If what opened only asks to confirm (a confirmation box), answer "none" unless the instruction says to confirm.`
+        : `Already done: ${this.secrets.scrub(ex.action)}. Do not do that again.${left ? ` You said this is left: ${JSON.stringify(left.slice(0, 200))}.` : ""} The page as it is now is below. If the instruction is now fully carried out, answer {"action": "none"}: do nothing it does not ask for. Only if a part of it is still left, give the one next action.`;
+      const text = inOpened ? r.text : (await this.view()).text;
+      const d2 = (await this.ask("two-step", P.ACT_SYSTEM, P.actPrompt(asked, text, hint(note)))) as Decision;
+      if (d2.action === "none" && notYet(d2.why)) {
+        // "none, but it is not finished yet": the page is still at work. Wait for it and ask once more;
+        // a second "not yet" is not done.
+        await this.session.waitReady(8000).catch(() => undefined);
+        const d3 = (await this.ask("two-step", P.ACT_SYSTEM, P.actPrompt(asked, (await this.view()).text, hint(note)))) as Decision;
+        if (d3.action === "none") {
+          if (notYet(d3.why)) ex = { ...ex, ok: false, reason: `not done yet: ${String(d3.why).slice(0, 160)}` };
+          break;
+        }
+        Object.assign(d2, d3);
       }
+      if (d2.action === "none" || sameDecision(d2, lastD)) break;
+      const ex2 = await this.execute(d2, vars, goal, stepParams, allowed);
+      // a dialog answered right after the action that opened it belongs to that step
+      if (ex2.ok && d2.action === "dialog" && ex.steps.length) answerOn(ex.steps[ex.steps.length - 1], d2, ex2.dialogText);
+      ex = { ...ex2, action: ex.action + "; " + ex2.action, steps: [...ex.steps, ...ex2.steps] };
+      lastD = d2;
     }
-    if (ex.ok && this.recorder) this.recorder.steps.push(...ex.steps);
-    this.tracer.write("act", { instruction, action: ex.action, status: ex.ok ? "ok" : "failed", reason: ex.reason, layer: "model" });
-    return { ok: ex.ok, action: this.secrets.scrub(ex.action), result: this.secrets.scrub(ex.result.text), reason: ex.reason, meta: this.end(b) };
+    if (scrolled && ex.ok) ex = { ...ex, action: scrolled + ex.action };
+    return ex;
+  }
+
+  /** @internal a warning: an event, a trace line, and console.warn unless warnings are off */
+  warning(message: string, extra: Record<string, unknown> = {}): void {
+    this.emit({ type: "warning", message, ...extra } as any);
+    this.tracer.write("warning", { message, ...extra });
+    if (this.warn) console.warn("[ghostwright] " + message);
+  }
+
+  /** @internal the steps recorded since the last call get the time that passed (a replay waits about that long for a late element) */
+  stamp(): void {
+    const rec = this.recorder;
+    if (!rec) return;
+    const now = Date.now();
+    if (rec.steps.length > rec.stamped) {
+      const s = rec.steps[rec.stamped];
+      if (rec.stamped > 0) s.after_ms = Math.min(60000, Math.max(0, now - rec.lastAt));
+      rec.stamped = rec.steps.length;
+    }
+    rec.lastAt = now;
   }
 
   private budget(): number { return this.o.viewBudget ?? 2000; }
@@ -481,21 +589,22 @@ export class Ghostwright {
   }
 
   /** @internal the page view a model reads */
-  async view(scope: "viewport" | "page" = "viewport", budget = this.budget(), fullLinks = false, expand = 0): Promise<View> {
-    let v = await this.session.observe({ scope, budget, fullLinks, expand });
+  async view(scope: "viewport" | "page" = "viewport", budget = this.budget(), fullLinks = false, expand = 0, allItems = false): Promise<View> {
+    let v = await this.session.observe({ scope, budget, fullLinks, expand, allItems });
     if (v.state === "challenge") {
       await this.handleChallenge(v.challenge?.kind || "unknown");
-      v = await this.session.observe({ scope, budget, fullLinks, expand });
+      v = await this.session.observe({ scope, budget, fullLinks, expand, allItems });
     }
     if (v.state === "ok" && v.elements.some(e => e.role === "captcha")) await this.solveWidgets(v);
     return v;
   }
 
   /** @internal runs a model decision; returns the recipe steps it makes */
-  async execute(d: Decision, vars: Record<string, string>, goal: string, stepParams?: Record<string, unknown>, allowed?: Set<string>): Promise<{ ok: boolean; reason?: string; action: string; result: ActResult; steps: Step[] }> {
+  async execute(d: Decision, vars: Record<string, string>, goal: string, stepParams?: Record<string, unknown>, allowed?: Set<string>): Promise<{ ok: boolean; reason?: string; action: string; result: ActResult; steps: Step[]; dialogText?: string }> {
     const a: Action = { action: d.action };
     let target: Target | null = null;
     let recipeText: string | undefined;
+    let dialogText: string | undefined;
     if (d.id != null) {
       a.id = Number(d.id);
       if (!this.session.last?.byId.has(a.id)) {
@@ -525,15 +634,33 @@ export class Ghostwright {
       }
       case "select": a.option = String(d.option ?? d.text ?? ""); break;
       case "press": a.keys = String(d.keys ?? "Enter"); break;
-      case "scroll": a.dy = Number(d.dy ?? 600); break;
+      case "scroll": if ((d as any).to != null) a.to = String((d as any).to); else a.dy = Number(d.dy ?? 600); break;
       case "navigate": a.url = String(d.url ?? ""); break;
       case "wait": a.ms = Math.min(Number(d.ms ?? 1000), 10000); break;
       case "back": break;
+      case "dialog": {
+        a.accept = d.accept !== false;
+        if (d.text != null && a.accept) {
+          // text typed into a prompt(): params and secrets as in a field (a secret only for the page's own origin)
+          const plan = planText(String(d.text), vars, this.secrets, allowed ?? new Set());
+          const left = placeholders(plan.recipe);
+          if (left.length) {
+            const reason = `the text holds ${left.map(n => `%${n}%`).join(", ")}, which is not a secret or variable here; nothing was typed`;
+            return { ok: false, reason, action: "dialog accept", result: emptyResult("dialog accept", reason), steps: [] };
+          }
+          a.text = await plan.resolve(this.session.currentURL);
+          const params = this.recorder?.params ?? stepParams ?? {};
+          dialogText = plan.usedSecrets.length ? plan.recipe : templatize(plan.recipe, params);
+        }
+        break;
+      }
       case "click": if (d.id == null && d.x != null) { a.x = Number(d.x); a.y = Number(d.y); } break;
     }
+    const control = a.id != null && !!this.session.last?.byId.get(a.id)?.interactive;
     const r = await this.session.act(a);
     if (r.status === "challenge") await this.handleChallenge(r.challenge?.kind || "unknown");
-    const chk = checkEffect(a, r, null);
+    const chk = checkEffect(a, r, null, { control });
+    if (chk.ok) await this.followNewTab(r);
     const steps: Step[] = [];
     const params = this.recorder?.params ?? stepParams;
     if (chk.ok && params) {
@@ -542,7 +669,7 @@ export class Ghostwright {
       if (this.recorder) for (const h of hostsOf(this.session.currentURL)) this.recorder.hosts.add(h);
     }
     this.notePlan({ action: r.action, ok: chk.ok, reason: chk.reason, target, effect: chk.effect, status: r.status });
-    return { ok: chk.ok, reason: chk.reason, action: r.action, result: r, steps };
+    return { ok: chk.ok, reason: chk.reason, action: r.action, result: r, steps, ...(dialogText != null ? { dialogText } : {}) };
   }
 
   /** Runs an action you spell out yourself (no model), e.g. { action: "click", role: "button", name: "Save" }. */
@@ -557,6 +684,7 @@ export class Ghostwright {
     }
     const r = await this.session.act(a);
     const chk = checkEffect(a, r, null);
+    if (chk.ok) await this.followNewTab(r);
     return { ok: chk.ok, action: this.secrets.scrub(r.action), result: this.secrets.scrub(r.text), reason: chk.reason, meta: this.end(b) };
   }
 
@@ -576,7 +704,9 @@ export class Ghostwright {
     for (const m of r.matches || []) {
       const el = this.session.last?.byId.get(Number(m.id));
       if (!el) continue;
-      out.push({ id: el.id, role: el.role, name: this.secrets.scrub(el.name), action: m.action, description: m.description, target: await this.session.locators(el.id) });
+      const target = await this.session.locators(el.id);
+      const selector = await this.session.selectorOf(el.id);
+      out.push({ id: el.id, role: el.role, name: this.secrets.scrub(el.name), action: m.action, description: m.description, target, ...(selector ? { selector } : {}), ...(target?.frame ? { frame: target.frame } : {}) });
     }
     return out;
   }
@@ -593,7 +723,25 @@ export class Ghostwright {
       this.tracer.write("extract", { instruction, layer: "model", source: o.file ? "file" : "html" });
       return { data: value as T, meta: { ...this.end(b), layer: "model" } };
     }
+    // The page's state when its view is taken: still at work (a request in flight, "Running…"), and what
+    // it shows. A model answer takes seconds, so the work can finish meanwhile; it is judged by the view.
+    const waitMs = o.waitMs ?? 15000;
+    const wasBusy = waitMs > 0 ? await this.session.busy() : null;
+    const stamp = waitMs > 0 ? await this.session.pageStamp() : "";
     let { value } = await this.modelExtract(instruction, sch, o.budget);
+    // Nothing read, and the page was at work when it was read, is at work now, or has changed since:
+    // wait for it, a bounded time, and read once more before an empty answer is returned
+    if (isEmptyAnswer(value) && waitMs > 0) {
+      let why = await this.session.busy();
+      const changed = !!stamp && (await this.session.pageStamp()) !== stamp;
+      if (why || wasBusy || changed) {
+        const until = Date.now() + waitMs;
+        while (why && Date.now() < until) { await new Promise(r => setTimeout(r, 300)); why = await this.session.busy(); }
+        await this.session.waitReady(3000).catch(() => undefined);
+        this.tracer.write("extract", { instruction, note: "read again after the page finished its work" });
+        ({ value } = await this.modelExtract(instruction, sch, o.budget));
+      }
+    }
     let layer: ExtractOutcome<T>["meta"]["layer"] = "model";
     const rec = this.recorder;
     const id = rec ? this.stepId() : "x";
@@ -604,6 +752,7 @@ export class Ghostwright {
     if (rec) {
       if (compiled) { layer = compiled.layer; rec.steps.push(...compiled.steps); }
       else rec.steps.push({ id, kind: "extract", from: "page", how: { model: true }, schema_ref: "output", goal: instruction, output_schema: sch.json });
+      this.stamp();
       mergeOutput(rec.output, sch.json);
     }
     this.tracer.write("extract", { instruction, layer });
@@ -638,7 +787,8 @@ export class Ghostwright {
 
   /** @internal */
   async modelExtract(instruction: string, sch: SchemaLike, budget?: number, session?: PageSession): Promise<{ value: unknown }> {
-    const v = session ? await session.observe({ scope: "page", budget: budget ?? 12000, fullLinks: true }) : await this.view("page", budget ?? 12000, true);
+    // every row and item: a read must not stop where a view would fold a long list
+    const v = session ? await session.observe({ scope: "page", budget: budget ?? 16000, fullLinks: true, allItems: true }) : await this.view("page", budget ?? 16000, true, 0, true);
     let err: string | undefined;
     for (let attempt = 0; attempt < 2; attempt++) {
       const raw = await this.ask("extract", P.EXTRACT_SYSTEM, P.extractPrompt(instruction, sch.json, v.text, err));
@@ -744,7 +894,7 @@ export class Ghostwright {
         const reason = (e as Error).message;
         ex = { ok: false, reason, action: `${d.action}${d.id != null ? ` [${d.id}]` : ""}`, result: emptyResult(d.action, reason), steps: [] };
       }
-      if (ex.ok && this.recorder) this.recorder.steps.push(...ex.steps);
+      if (ex.ok && this.recorder) { this.recorder.steps.push(...ex.steps); this.stamp(); }
       lastEffect = this.secrets.scrub(effectVerdict(d, ex));
       const changed = ex.ok && !/^no change/.test(lastEffect);
       idle = changed ? 0 : idle + 1;
@@ -764,7 +914,7 @@ export class Ghostwright {
   async flow(name: string, o: { params?: Record<string, unknown> } = {}): Promise<Flow> {
     if (this.recorder) throw new GhostwrightError("flow_open", `flow "${this.recorder.name}" is still recording: save() it first`);
     const n = recipeName(name);
-    this.recorder = { name: n, params: o.params || {}, steps: [], output: { type: "object", properties: {}, required: [] }, n: 0, hosts: new Set() };
+    this.recorder = { name: n, params: o.params || {}, steps: [], output: { type: "object", properties: {}, required: [] }, n: 0, hosts: new Set(), lastAt: Date.now(), stamped: 0, failed: [] };
     this.tracer = new Tracer(this.store.traceFile(`${n}-record-${Date.now()}`), this.secrets, this.o.debug ?? false);
     return new Flow(this, n);
   }
@@ -873,20 +1023,26 @@ export class Ghostwright {
 export class Flow {
   constructor(private gw: Ghostwright, readonly name: string) {}
 
+  /** Opens a URL; the first one is the flow's start page. */
   goto(url: string) { return this.gw.goto(url); }
+  /** Does one thing, described in plain words, and records it as a step when it worked. */
   act(instruction: string, o?: { variables?: Record<string, unknown> }) { return this.gw.act(instruction, o); }
-  extract<T = any>(instruction: string, schema: unknown, o?: { budget?: number }) { return this.gw.extract<T>(instruction, schema, o); }
+  /** Reads data into a schema and records how; `meta.layer` says whether replays will need a model for it. */
+  extract<T = any>(instruction: string, schema: unknown, o?: { budget?: number; waitMs?: number }) { return this.gw.extract<T>(instruction, schema, o); }
+  /** Finds elements that match a request (not recorded). */
   observe(request: string) { return this.gw.observe(request); }
+  /** Runs a multi-step task; every action of the run is recorded as a step. */
   agent(task: string, o?: AgentOptions) { return this.gw.agent(task, o); }
 
   /** The steps so far (scrubbed). */
   get steps(): Step[] { return this.gw.secrets.safeRecipe({ steps: this.gw.recorder?.steps ?? [] }).steps; }
 
   /** Writes the recipe to the store and stops recording. Saving again makes a new version. */
-  async save(o: { repair?: "auto" | "review" | "off" } = {}): Promise<Recipe> {
+  async save(o: { repair?: "auto" | "review" | "off"; /** at most this many steps repaired in one run (default: every step, at least 3, at most 20) */ maxRepairs?: number } = {}): Promise<Recipe> {
     const rec = this.gw.recorder;
     if (!rec || rec.name !== this.name) throw new GhostwrightError("flow_closed", `flow "${this.name}" is not recording`);
     if (!rec.steps.length) throw new GhostwrightError("flow_empty", `flow "${this.name}" has no steps`);
+    if (rec.failed.length) this.gw.warning(`flow "${this.name}": ${rec.failed.length} instruction${rec.failed.length === 1 ? "" : "s"} failed while recording and ${rec.failed.length === 1 ? "is" : "are"} not in the saved flow, so replays will not do ${rec.failed.length === 1 ? "it" : "them"}: ${rec.failed.map(x => JSON.stringify(x.slice(0, 80))).join(", ")}`);
     const prev = this.gw.store.load(rec.name);
     const assertions: Recipe["assertions"] = [];
     const lists = Object.entries(rec.output.properties || {}).filter(([, s]: any) => s.type === "array").map(([k]) => k);
@@ -901,7 +1057,7 @@ export class Flow {
       steps: rec.steps,
       ...(assertions.length ? { assertions } : {}),
       // a flow that types secrets keeps its repairs for review unless told otherwise
-      repair: { mode: o.repair ?? (rec.steps.some(s => /\{\{\s*(secret|totp)\s*:/.test(s.text || "")) ? "review" : "auto"), max_steps: 3 },
+      repair: { mode: o.repair ?? (rec.steps.some(s => /\{\{\s*(secret|totp)\s*:/.test(s.text || "")) ? "review" : "auto"), max_steps: Math.min(20, Math.max(1, o.maxRepairs ?? Math.max(3, rec.steps.length))) },
       meta: { created_at: new Date().toISOString(), recorded_with: "ghostwright", hosts: [...rec.hosts].sort() },
     });
     this.gw.store.promote(recipe);
@@ -974,6 +1130,47 @@ export async function completeCut(session: PageSession, value: unknown): Promise
   return fix(value);
 }
 
+/**
+ * A click that showed choices (a custom dropdown's options, a menu without menu roles) where one
+ * of them carries a word of the instruction that the clicked control did not: the instruction
+ * needs one more action in what opened ("Set the speed to Express" after "Standard ▾" opened).
+ */
+/** A model's reason for "none" that says the work is not finished ("still processing", "not enabled yet"). */
+export function notYet(why: unknown): boolean {
+  const t = String(why ?? "");
+  return /\b(not (yet|enabled|ready|finished|done|complete|loaded|available)|still (processing|loading|working|disabled|running|waiting|pending)|(is|are) (disabled|loading|pending)|has not (yet )?(appeared|loaded|finished)|waiting for)\b/i.test(t);
+}
+
+/** An extract answer with nothing in it: every list empty, every value null or blank. */
+export function isEmptyAnswer(v: unknown): boolean {
+  if (v == null) return true;
+  if (typeof v === "string") return !v.trim();
+  if (Array.isArray(v)) return v.every(isEmptyAnswer);
+  if (typeof v === "object") { const xs = Object.values(v as object); return !xs.length || xs.every(isEmptyAnswer); }
+  return false;
+}
+
+/** The answer to a JavaScript dialog, kept on the step that opened it: accept or dismiss, and the text typed into a prompt(). */
+function answerOn(step: Step, d: Decision, text: string | undefined): void {
+  step.dialog = d.accept === false ? "dismiss" : "accept";
+  if (step.dialog === "accept" && text != null) step.dialog_text = text;
+  else delete step.dialog_text;
+}
+
+/** The same action on the same element with the same input: a model repeating itself. */
+function sameDecision(a: Decision, b: Decision): boolean {
+  return a.action === b.action && a.id === b.id && (a.text ?? "") === (b.text ?? "") && (a.option ?? "") === (b.option ?? "") && (a.keys ?? "") === (b.keys ?? "") && (a.url ?? "") === (b.url ?? "") && a.action !== "scroll";
+}
+
+function opensChoice(instruction: string, changes: Change[], clicked: number): boolean {
+  const added = changes.filter(c => c.op === "added" && c.name && ["clickable", "link", "button", "option", "menuitem", "radio", "checkbox", "treeitem", "tab"].includes(c.role));
+  if (added.length < 2) return false;
+  const was = (changes.find(c => c.id === clicked)?.was || changes.find(c => c.id === clicked)?.name || "").toLowerCase();
+  const words = (instruction.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) || []).filter(w => !STOP.has(w) && !was.includes(w));
+  return added.some(c => words.some(w => c.name!.toLowerCase().includes(w)));
+}
+const STOP = new Set(["the", "and", "for", "from", "into", "with", "set", "choose", "pick", "select", "click", "open", "option", "menu", "this", "that", "your"]);
+
 /** Are these words (from a model) on the page, or in what the run saw? Case and spacing aside. */
 export function onPage(words: string, ...texts: string[]): boolean {
   // the view quotes page text and joins table cells with " | ": neither counts
@@ -1015,16 +1212,22 @@ function mergeOutput(out: JSONSchema, s: JSONSchema): void {
   }
 }
 
-/** Did the action do what it should? (a click that changed nothing did not work) */
-export function checkEffect(a: Action, r: ActResult, want: Effect | null): { ok: boolean; reason?: string; effect: Effect } {
+const STATE_KEYS = ["expanded", "checked", "pressed", "selected"];
+
+/** Did the action do what it should? (a click on something that is not a control and changed nothing did not work) */
+export function checkEffect(a: Action, r: ActResult, want: Effect | null, o: { control?: boolean; stateAfter?: Record<string, string> } = {}): { ok: boolean; reason?: string; effect: Effect } {
   if (r.status !== "ok") return { ok: false, reason: `${r.status}: ${r.reason}`, effect: { kind: "none" } };
+  const control = o.control ?? r.control ?? false;
+  const id = a.id ?? r.id;
   const moved = !!r.navigation && !r.navigation.sameDocument;
   const changed = moved || !!r.view || r.changes.length > 0 || r.newTabs.length > 0 || r.downloads.length > 0 || !!r.dialog || !!r.navigation;
   const nav: Effect = { kind: "navigate", path: r.navigation ? safePath(r.navigation.url) : undefined };
   switch (a.action) {
     case "type": {
       if (!a.text) return { ok: true, effect: { kind: "none" } };
-      const took = r.view || r.changes.some(c => c.id === a.id && c.fields && ("value" in c.fields || "pw" in c.fields || "secret" in c.fields));
+      // the field was read back after typing: that decides when it could be read
+      if (r.typed === false && !moved) return { ok: false, reason: "the field did not take the text", effect: { kind: "none" } };
+      const took = r.typed === true || r.view || r.changes.some(c => c.id === id && c.fields && ("value" in c.fields || "pw" in c.fields || "secret" in c.fields));
       if (took || moved) return { ok: true, effect: moved ? nav : { kind: "value" } };
       return { ok: false, reason: "the field did not take the text", effect: { kind: "none" } };
     }
@@ -1034,12 +1237,27 @@ export function checkEffect(a: Action, r: ActResult, want: Effect | null): { ok:
     case "press":
     case "select": {
       const eff: Effect = moved ? nav : changed ? { kind: "change" } : { kind: "none" };
+      // the state the target took (open, checked, pressed, selected): checked again on replay
+      const took = r.changes.find(c => c.id === id && c.op === "changed" && c.fields);
+      const st = took ? Object.fromEntries(Object.entries(took.fields!).filter(([k, v]) => STATE_KEYS.includes(k) && v !== "")) : {};
+      if (!moved && Object.keys(st).length) eff.state = st;
       if (want) {
         if (want.kind === "navigate" && !moved && !r.navigation) return { ok: false, reason: "the page did not navigate as when the flow was recorded", effect: eff };
         if (want.kind === "change" && !changed) return { ok: false, reason: "no visible effect", effect: eff };
+        if (want.state && o.stateAfter) {
+          const off = Object.entries(want.state).find(([k, v]) => o.stateAfter![k] !== undefined && o.stateAfter![k] !== v);
+          if (off) return { ok: false, reason: `the element is not ${off[0]}=${off[1]} as when the flow was recorded`, effect: eff };
+        }
+        if (!changed && a.action === "click" && !((r.mutations || 0) > 0 || r.settle.requestCount > 0)) return { ok: false, reason: "no effect: the page did not change and sent nothing", effect: eff };
         return { ok: true, effect: eff };
       }
-      if (!changed && (a.action === "click" || a.action === "press")) return { ok: false, reason: "no visible effect", effect: eff };
+      if (!changed && (a.action === "click" || a.action === "press")) {
+        // a control may change nothing the view lists (a star that only fills in, a button that only saves):
+        // it worked when the page itself changed or sent something. A click that left the page as it
+        // was and sent nothing did nothing.
+        if (a.action === "click" && control && ((r.mutations || 0) > 0 || r.settle.requestCount > 0)) return { ok: true, reason: "clicked; the page changed, nothing new to read", effect: eff };
+        return { ok: false, reason: a.action === "click" && control ? "no effect: the page did not change and sent nothing" : "no visible effect", effect: eff };
+      }
       return { ok: true, effect: eff };
     }
     case "navigate":
@@ -1065,7 +1283,7 @@ export function toStep(a: Action, target: Target | null, recipeText: string | un
     case "type": return tg ? { ...base, kind: "type", target: tg, text: templatize(recipeText ?? a.text ?? "", params), clear: a.clear, submit: a.submit || undefined } : null;
     case "select": return tg ? { ...base, kind: "select", target: tg, value: templatize(a.option || "", params) } : null;
     case "press": return { ...base, kind: "press", keys: a.keys };
-    case "scroll": return { ...base, kind: "scroll", value: String(a.dy ?? 600) };
+    case "scroll": return { ...base, kind: "scroll", value: a.to ?? String(a.dy ?? 600), ...(tg && (a.to || a.dy) ? { target: tg } : {}) };
     case "navigate": return { ...base, kind: "navigate", url: templatize(a.url || pageURL, params) };
     case "wait": return { ...base, kind: "wait", timeout_ms: Math.max(100, a.ms || 100) };
   }

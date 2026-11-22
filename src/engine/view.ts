@@ -82,6 +82,8 @@ export interface ObserveOptions {
   budget?: number;
   /** keep link targets whole (used for extraction) */
   fullLinks?: boolean;
+  /** every row and list item (used for extraction: a read must not stop at the fold) */
+  allItems?: boolean;
 }
 
 export const DEFAULT_BUDGET = 2000;
@@ -469,7 +471,8 @@ export function buildView(sn: Snapshot, o: ObserveOptions = {}): View {
   let r: Rendered | undefined;
   let text = "";
   for (const base of LEVELS) {
-    const lv = o.fullLinks && base.n < 4 ? { ...base, hrefMax: 100000 } : base;
+    let lv = o.fullLinks && base.n < 4 ? { ...base, hrefMax: 100000 } : base;
+    if (o.allItems && base.n < 3) lv = { ...lv, rowMax: 100000, listMax: 100000 };
     r = render(sn, o, lv);
     text = str(r);
     v.degraded = lv.n;

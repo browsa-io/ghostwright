@@ -1,7 +1,7 @@
 {
   "name": "ghostwright",
-  "version": "0.1.1",
-  "description": "Browser agents that replay without a model. Record a flow once with any model, replay it with zero model calls.",
+  "version": "0.2.0",
+  "description": "Browser agents you run more than once. Record a flow once with any model; replays check every step and need no model when the flow's extracts compile to page reads.",
   "license": "MIT",
   "author": "Browsa <support@browsa.io>",
   "homepage": "https://github.com/browsa-io/ghostwright#readme",
@@ -30,8 +30,14 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./package.json": "./package.json"
   },
@@ -41,17 +47,25 @@
   "files": [
     "dist",
     "schema",
+    "examples",
+    "docs",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "rm -rf dist && tsc -p . && cp src/engine/pageview.js src/engine/locate.js dist/engine/ && chmod +x dist/cli.js",
+    "build": "rm -rf dist && tsc -p . && cp src/engine/pageview.js src/engine/locate.js dist/engine/ && cp cjs/index.cjs cjs/index.d.cts dist/ && chmod +x dist/cli.js",
     "test": "vitest run test/unit",
     "test:e2e": "vitest run test/e2e",
     "test:smoke": "GHOSTWRIGHT_SMOKE=1 vitest run test/smoke",
     "typecheck": "tsc --noEmit -p .",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "test:all": "npm test && npm run test:e2e",
+    "docs": "tsx scripts/api-docs.mts",
+    "docs:check": "tsx scripts/api-docs.mts --check",
+    "pack:check": "node scripts/pack-check.mjs",
+    "bench": "node bench/suite/harness/run.mjs --adapter ghostwright-local",
+    "bench:report": "node bench/suite/harness/report.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.106",
